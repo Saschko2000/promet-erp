@@ -9,7 +9,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -41,12 +41,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -59,9 +57,9 @@ interface
 {$I ZDbc.inc}
 
 uses
-  Classes, SysUtils, StrUtils,
-  ZSysUtils, ZDbcIntfs, ZPlainMySqlDriver, ZPlainMySqlConstants,  ZDbcLogging,
-  ZCompatibility, ZDbcResultSetMetadata;
+  Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils,
+  ZSysUtils, ZDbcIntfs, ZPlainMySqlDriver, ZPlainMySqlConstants, ZDbcLogging,
+  ZCompatibility, ZDbcResultSetMetadata, ZVariant;
 
 const
   MAXBUF = 65535;
@@ -79,7 +77,7 @@ type
 }
 function ConvertMySQLHandleToSQLType(PlainDriver: IZMySQLPlainDriver;
   FieldHandle: PZMySQLField; FieldFlags: Integer;
-  const CharEncoding: TZCharEncoding; const UTF8StringAsWideField: Boolean): TZSQLType;
+  const CtrlsCPType: TZControlsCodePage): TZSQLType;
 
 {**
   Convert string mysql field type to SQLType
@@ -87,7 +85,7 @@ function ConvertMySQLHandleToSQLType(PlainDriver: IZMySQLPlainDriver;
   @result the SQLType field type value
 }
 function ConvertMySQLTypeToSQLType(TypeName, TypeNameFull: string;
-  const CharEncoding: TZCharEncoding; const UTF8StringAsWideField: Boolean): TZSQLType;
+  const CtrlsCPType: TZControlsCodePage): TZSQLType;
 
 {**
   Checks for possible sql errors.
@@ -96,10 +94,14 @@ function ConvertMySQLTypeToSQLType(TypeName, TypeNameFull: string;
   @param LogCategory a logging category.
   @param LogMessage a logging message.
 }
-procedure CheckMySQLError(PlainDriver: IZMySQLPlainDriver;
-  Handle: PZMySQLConnect; LogCategory: TZLoggingCategory; const LogMessage: string);
-procedure CheckMySQLPrepStmtError(PlainDriver: IZMySQLPlainDriver;
-  Handle: PZMySQLConnect; LogCategory: TZLoggingCategory; const LogMessage: string);
+procedure CheckMySQLError(const PlainDriver: IZMySQLPlainDriver;
+  const Handle: PZMySQLConnect; const LogCategory: TZLoggingCategory;
+  const LogMessage: RawByteString; Const ConSettings: PZConSettings);
+procedure CheckMySQLPrepStmtError(const PlainDriver: IZMySQLPlainDriver;
+  const Handle: PZMySQLConnect; const LogCategory: TZLoggingCategory;
+  const LogMessage: RawByteString; const ConSettings: PZConSettings;
+  ErrorIsIgnored: PBoolean = nil; const IgnoreErrorCode: Integer = 0);
+
 procedure EnterSilentMySQLError;
 procedure LeaveSilentMySQLError;
 
@@ -146,12 +148,22 @@ function getMySQLFieldSize (field_type: TMysqlFieldTypes; field_size: LongWord):
   @returns a new TZColumnInfo
 }
 function GetMySQLColumnInfoFromFieldHandle(PlainDriver: IZMySQLPlainDriver;
-  const FieldHandle: PZMySQLField; const Encoding: TZCharEncoding;
-  const UTF8StringAsWideField: Boolean; const bUseResult:boolean): TZColumnInfo;
+  const FieldHandle: PZMySQLField; ConSettings: PZConSettings;
+  const bUseResult:boolean): TZColumnInfo;
+
+procedure ConvertMySQLColumnInfoFromString(const TypeInfo: String;
+  ConSettings: PZConSettings; out TypeName, TypeInfoSecond: String;
+  out FieldType: TZSQLType; out ColumnSize: Integer; out Precision: Integer);
+
+function MySQLPrepareAnsiSQLParam(Handle: PZMySQLConnect; Value: TZVariant;
+  const DefaultValue: String; ClientVarManager: IZClientVariantManager;
+  PlainDriver: IZMySQLPlainDriver; const InParamType: TZSQLType;
+  const UseDefaults: Boolean; ConSettings: PZConSettings): RawByteString;
 
 implementation
 
-uses ZMessages, Math;
+uses {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings, {$ENDIF} Math,
+  ZMessages, ZDbcUtils, ZFastCode;
 
 threadvar
   SilentMySQLError: Integer;
@@ -175,7 +187,7 @@ end;
 }
 function ConvertMySQLHandleToSQLType(PlainDriver: IZMySQLPlainDriver;
   FieldHandle: PZMySQLField; FieldFlags: Integer;
-  const CharEncoding: TZCharEncoding; const UTF8StringAsWideField: Boolean): TZSQLType;
+  const CtrlsCPType: TZControlsCodePage): TZSQLType;
 
   function Signed: Boolean;
   begin
@@ -185,47 +197,43 @@ function ConvertMySQLHandleToSQLType(PlainDriver: IZMySQLPlainDriver;
 begin
     case PlainDriver.GetFieldType(FieldHandle) of
     FIELD_TYPE_TINY:
-      begin
-            if Signed then
-               Result := stByte
-            else
-               Result := stShort;
-      end;
-    FIELD_TYPE_YEAR, FIELD_TYPE_SHORT:
-      begin
-            if Signed then
-               Result := stShort
-            else
-               Result := stInteger;
-      end;
+      if Signed then
+         Result := stShort
+      else
+         Result := stByte;
+    FIELD_TYPE_YEAR:
+      Result := stWord;
+    FIELD_TYPE_SHORT:
+      if Signed then
+         Result := stSmall
+      else
+         Result := stWord;
     FIELD_TYPE_INT24, FIELD_TYPE_LONG:
-      begin
-            if Signed then
-               Result := stInteger
-            else
-               Result := stLong;
-      end;
+      if Signed then
+         Result := stInteger
+      else
+         Result := stLongWord;
     FIELD_TYPE_LONGLONG:
-      begin
-            if Signed then
-               Result := stLong
-            else
-               Result := stBigDecimal;
-      end;
+      if Signed then
+         Result := stLong
+      else
+        Result := stULong;
     FIELD_TYPE_FLOAT:
-      Result := stDouble;
+      Result := stFloat;
     FIELD_TYPE_DECIMAL, FIELD_TYPE_NEWDECIMAL: {ADDED FIELD_TYPE_NEWDECIMAL by fduenas 20-06-2006}
-      begin
-        if PlainDriver.GetFieldDecimals(FieldHandle) = 0 then
-        begin
-          if PlainDriver.GetFieldLength(FieldHandle) < 11 then
+      if PlainDriver.GetFieldDecimals(FieldHandle) = 0 then
+        if PlainDriver.GetFieldLength(FieldHandle) < 11 then
+          if Signed then
             Result := stInteger
           else
-            Result := stLong;
-          end
+            Result := stLongWord
         else
-          Result := stDouble;
-      end;
+          if Signed then
+             Result := stLong
+          else
+            Result := stULong
+      else
+        Result := stDouble;
     FIELD_TYPE_DOUBLE:
       Result := stDouble;
     FIELD_TYPE_DATE, FIELD_TYPE_NEWDATE:
@@ -237,27 +245,24 @@ begin
     FIELD_TYPE_TINY_BLOB, FIELD_TYPE_MEDIUM_BLOB,
     FIELD_TYPE_LONG_BLOB, FIELD_TYPE_BLOB:
       if (FieldFlags and BINARY_FLAG) = 0 then
-        If CharEncoding = ceUTF8 then
-          if UTF8StringAsWideField then
-            Result := stUnicodeStream
-          else
-            Result := stAsciiStream
+        If ( CtrlsCPType = cCP_UTF16) then
+          Result := stUnicodeStream
         else
           Result := stAsciiStream
       else
         Result := stBinaryStream;
     FIELD_TYPE_BIT:
-      Result := stShort;
+      Result := stByte;
     FIELD_TYPE_VARCHAR,
     FIELD_TYPE_VAR_STRING,
     FIELD_TYPE_STRING:
-      if CharEncoding = ceUTF8 then
-        if UTF8StringAsWideField then
+      if (FieldFlags and BINARY_FLAG) = 0 then
+        if ( CtrlsCPType = cCP_UTF16) then
           Result := stUnicodeString
         else
           Result := stString
       else
-        Result := stString;
+        Result := stBytes;
     FIELD_TYPE_ENUM:
       Result := stString;
     FIELD_TYPE_SET:
@@ -271,14 +276,6 @@ begin
    else
       raise Exception.Create('Unknown MySQL data type!');
    end;
-  { Fix by the HeidiSql team. - See their SVN repository rev.775 and 900}
-  { SHOW FULL PROCESSLIST on 4.x servers can return veeery long FIELD_TYPE_VAR_STRINGs.
-  The following helps avoid excessive row buffer allocation later on. }
-  if (Result = stString) and (PlainDriver.GetFieldLength(FieldHandle) > 8192) then
-     Result := stAsciiStream;
-
-  if (Result = stUnicodeString) and (PlainDriver.GetFieldLength(FieldHandle) > 8192) then
-     Result := stUnicodeStream;
 end;
 
 {**
@@ -287,7 +284,7 @@ end;
   @result the SQLType field type value
 }
 function ConvertMySQLTypeToSQLType(TypeName, TypeNameFull: string;
-  const CharEncoding: TZCharEncoding; const UTF8StringAsWideField: Boolean): TZSQLType;
+  const CtrlsCPType: TZControlsCodePage): TZSQLType;
 const
   GeoTypes: array[0..7] of string = (
    'POINT','LINESTRING','POLYGON','GEOMETRY',
@@ -311,37 +308,41 @@ begin
   if Posi > 0 then
     Spec := Copy(TypeNameFull, Posi + 1, Length(TypeNameFull)-Posi);
 
-  IsUnsigned := Pos('UNSIGNED', Spec) > 0;
+  IsUnsigned := ZFastCode.Pos('UNSIGNED', Spec) > 0;
 
   if TypeName = 'TINYINT' then
   begin
     if IsUnsigned then
-      Result := stShort
+      Result := stByte
     else
-      Result := stByte;
+      Result := stSmall;
   end
   else if TypeName = 'YEAR' then
-    Result := stShort
+    Result := stWord  //1901 to 2155, and 0000 in the 4 year format and 1970-2069 if you use the 2 digit format (70-69).
   else if TypeName = 'SMALLINT' then
   begin
     if IsUnsigned then
-      Result := stInteger
+      Result := stWord  //0 - 65535
     else
-      Result := stShort;
+      Result := stSmall; //-32768 - 32767
   end
   else if TypeName = 'MEDIUMINT' then
-    Result := stInteger
-  else if (TypeName = 'INT') or (TypeName = 'INTEGER') then
-  begin
-      if IsUnsigned then
-         Result := stLong
-      else
-         Result := stInteger
-  end
+    if IsUnsigned then  //0 - 16777215
+       Result := stLongWord
+    else
+       Result := stInteger //-8388608 - 8388607
+  else if (TypeName = 'INT') or (TypeName = 'INTEGER') or (TypeName = 'INT24') then
+    if IsUnsigned then
+       Result := stLongWord //0 - 4294967295
+    else
+       Result := stInteger //-2147483648 - 2147483647
   else if TypeName = 'BIGINT' then
-    Result := stLong
-  else if TypeName = 'INT24' then
-    Result := stLong
+    if IsUnsigned then
+       Result := stULong //0 - 18446744073709551615
+    else
+       Result := stLong // -9223372036854775808 - 9223372036854775807
+  //else if TypeName = 'INT24' then  //no docs?
+    //Result := stLong
   else if TypeName = 'REAL' then
   begin
     if IsUnsigned then
@@ -413,13 +414,13 @@ begin
   else if TypeName = 'SET' then
     Result := stString
   else if TypeName = 'BIT' then
-    Result := stShort
+    Result := stSmall
   else
       for i := 0 to Length(GeoTypes) - 1 do
          if GeoTypes[i] = TypeName then
             Result := stBinaryStream;
 
-  if (CharEncoding = ceUTF8) and UTF8StringAsWideField then
+  if ( CtrlsCPType = cCP_UTF16) then
   case result of
     stString: Result := stUnicodeString;
     stAsciiStream: Result := stUnicodeStream;
@@ -436,42 +437,56 @@ end;
   @param LogCategory a logging category.
   @param LogMessage a logging message.
 }
-procedure CheckMySQLError(PlainDriver: IZMySQLPlainDriver;
-  Handle: PZMySQLConnect; LogCategory: TZLoggingCategory; const LogMessage: string);
+procedure CheckMySQLError(const PlainDriver: IZMySQLPlainDriver;
+  const Handle: PZMySQLConnect; const LogCategory: TZLoggingCategory;
+  const LogMessage: RawByteString; Const ConSettings: PZConSettings);
 var
-  ErrorMessage: string;
+  ErrorMessage: RawByteString;
   ErrorCode: Integer;
 begin
-  ErrorMessage := Trim(String(StrPas(PlainDriver.GetLastError(Handle))));
+  ErrorMessage := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}Trim(PlainDriver.GetLastError(Handle));
   ErrorCode := PlainDriver.GetLastErrorCode(Handle);
   if (ErrorCode <> 0) and (ErrorMessage <> '') then
   begin
     if SilentMySQLError > 0 then
       raise EZMySQLSilentException.CreateFmt(SSQLError1, [ErrorMessage]);
 
-    DriverManager.LogError(LogCategory, PlainDriver.GetProtocol, LogMessage,
+    DriverManager.LogError(LogCategory, ConSettings.Protocol, LogMessage,
       ErrorCode, ErrorMessage);
     raise EZSQLException.CreateWithCode(ErrorCode,
-      Format(SSQLError1, [ErrorMessage]));
+      Format(SSQLError1, [ConSettings^.ConvFuncs.ZRawToString(
+        ErrorMessage, ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP)]));
   end;
 end;
 
-procedure CheckMySQLPrepStmtError(PlainDriver: IZMySQLPlainDriver;
-  Handle: PZMySQLConnect; LogCategory: TZLoggingCategory; const LogMessage: string);
+procedure CheckMySQLPrepStmtError(const PlainDriver: IZMySQLPlainDriver;
+  const Handle: PZMySQLConnect; const LogCategory: TZLoggingCategory;
+  const LogMessage: RawByteString; const ConSettings: PZConSettings;
+  ErrorIsIgnored: PBoolean = nil; const IgnoreErrorCode: Integer = 0);
 var
-  ErrorMessage: string;
+  ErrorMessage: RawByteString;
   ErrorCode: Integer;
 begin
-  ErrorMessage := Trim(String(PlainDriver.GetLastPreparedError(Handle)));
   ErrorCode := PlainDriver.GetLastPreparedErrorCode(Handle);
+  if Assigned(ErrorIsIgnored) then
+    if (IgnoreErrorCode = ErrorCode) then
+    begin
+      ErrorIsIgnored^ := True;
+      Exit;
+    end
+    else
+      ErrorIsIgnored^ := False;
+  ErrorMessage := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}Trim(PlainDriver.GetLastPreparedError(Handle));
   if (ErrorCode <> 0) and (ErrorMessage <> '') then
   begin
     if SilentMySQLError > 0 then
       raise EZMySQLSilentException.CreateFmt(SSQLError1, [ErrorMessage]);
 
-    DriverManager.LogError(LogCategory,PlainDriver.GetProtocol,LogMessage,ErrorCode, ErrorMessage);
+    DriverManager.LogError(LogCategory, ConSettings^.Protocol, LogMessage,
+      ErrorCode, ErrorMessage);
     raise EZSQLException.CreateWithCode(ErrorCode,
-      Format(SSQLError1, [ErrorMessage]));
+      Format(SSQLError1, [ConSettings^.ConvFuncs.ZRawToString(
+        ErrorMessage, ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP)]));
   end;
 end;
 
@@ -527,27 +542,25 @@ begin
  Result := EncodeSQLVersioning(MajorVersion,MinorVersion,SubVersion);
 end;
 
-function getMySQLFieldSize (field_type: TMysqlFieldTypes; field_size: LongWord): LongWord;
-var
-    FieldSize: LongWord;
-Begin
-    FieldSize := field_size;
-
-    case field_type of
-        FIELD_TYPE_TINY:        Result := 1;
-        FIELD_TYPE_SHORT:       Result := 2;
-        FIELD_TYPE_LONG:        Result := 4;
-        FIELD_TYPE_LONGLONG:    Result := 8;
-        FIELD_TYPE_FLOAT:       Result := 4;
-        FIELD_TYPE_DOUBLE:      Result := 8;
-        FIELD_TYPE_DATE:        Result := sizeOf(MYSQL_TIME);
-        FIELD_TYPE_TIME:        Result := sizeOf(MYSQL_TIME);
-        FIELD_TYPE_DATETIME:    Result := sizeOf(MYSQL_TIME);
-        FIELD_TYPE_BLOB:        Result := FieldSize;
-        FIELD_TYPE_STRING:      Result := FieldSize;
-    else
-        Result := 255;  {unknown ??}
-    end;
+function getMySQLFieldSize(field_type: TMysqlFieldTypes; field_size: LongWord): LongWord;
+begin
+  case field_type of
+    FIELD_TYPE_ENUM:        Result := 1;
+    FIELD_TYPE_TINY:        Result := 1;
+    FIELD_TYPE_SHORT:       Result := 2;
+    FIELD_TYPE_LONG:        Result := 4;
+    FIELD_TYPE_LONGLONG:    Result := 8;
+    FIELD_TYPE_FLOAT:       Result := 4;
+    FIELD_TYPE_DOUBLE:      Result := 8;
+    FIELD_TYPE_DATE:        Result := sizeOf(MYSQL_TIME);
+    FIELD_TYPE_TIME:        Result := sizeOf(MYSQL_TIME);
+    FIELD_TYPE_DATETIME:    Result := sizeOf(MYSQL_TIME);
+    FIELD_TYPE_TINY_BLOB:   Result := field_size; //stBytes
+    FIELD_TYPE_BLOB:        Result := field_size;
+    FIELD_TYPE_STRING:      Result := field_size;
+  else
+    Result := 255;  {unknown ??}
+  end;
 end;
 
 {**
@@ -557,67 +570,85 @@ end;
   @returns a new TZColumnInfo
 }
 function GetMySQLColumnInfoFromFieldHandle(PlainDriver: IZMySQLPlainDriver;
-  const FieldHandle: PZMySQLField; const Encoding: TZCharEncoding;
-  const UTF8StringAsWideField: Boolean; const bUseResult:boolean): TZColumnInfo;
+  const FieldHandle: PZMySQLField; ConSettings: PZConSettings;
+  const bUseResult:boolean): TZColumnInfo;
 var
   FieldFlags: Integer;
-  FieldLength:integer;
-  bUseMaxLength:boolean;
+  FieldLength: ULong;
 begin
   if Assigned(FieldHandle) then
   begin
     Result := TZColumnInfo.Create;
     FieldFlags := PlainDriver.GetFieldFlags(FieldHandle);
 
-    Result.ColumnLabel := PlainDriver.ZDbcString(PlainDriver.GetFieldName(FieldHandle), Encoding);
-    Result.ColumnName := PlainDriver.ZDbcString(PlainDriver.GetFieldOrigName(FieldHandle), Encoding);
-    Result.TableName := PlainDriver.ZDbcString(PlainDriver.GetFieldTable(FieldHandle), Encoding);
+    Result.ColumnLabel := ConSettings^.ConvFuncs.ZRawToString(PlainDriver.GetFieldName(FieldHandle), ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP);
+    Result.ColumnName := ConSettings^.ConvFuncs.ZRawToString(PlainDriver.GetFieldOrigName(FieldHandle), ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP);
+    Result.TableName := ConSettings^.ConvFuncs.ZRawToString(PlainDriver.GetFieldTable(FieldHandle), ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP);
     Result.ReadOnly := (PlainDriver.GetFieldTable(FieldHandle) = '');
     Result.Writable := not Result.ReadOnly;
     Result.ColumnType := ConvertMySQLHandleToSQLType(PlainDriver,
-        FieldHandle, FieldFlags, Encoding, UTF8StringAsWideField);
+        FieldHandle, FieldFlags, ConSettings.CPType);
     FieldLength:=PlainDriver.GetFieldLength(FieldHandle);
     //EgonHugeist: arrange the MBCS field DisplayWidth to a proper count of Chars
-     if Result.ColumnType in [stString, stUnicodeString] then
-     case PlainDriver.GetFieldCharsetNr(FieldHandle) of
-      1, 84, {Big5}
-      95, 96, {cp932 japanese}
-      19, 85, {euckr}
-      24, 86, {gb2312}
-      38, 87, {gbk}
-      13, 88, {sjis}
-      35, 90, 128..151:  {ucs2}
-        Result.ColumnDisplaySize := FieldLength div 2;
-      33, 83, 192..215, { utf8 }
-      97, 98, { eucjpms}
-      12, 91: {ujis}
-        Result.ColumnDisplaySize := FieldLength div 3;
-      54, 55, 101..124, {utf16}
-      56, 62, {utf16le}
-      60, 61, 160..183, {utf32}
-      45, 46, 224..247: {utf8mb4}
-        Result.ColumnDisplaySize := FieldLength div 4;
-      else Result.ColumnDisplaySize := FieldLength; //1-Byte charsets
-    end;
-    Result.Precision := min(MaxBlobSize,FieldLength);
-    if PlainDriver.GetFieldType(FieldHandle) in [FIELD_TYPE_BLOB,FIELD_TYPE_MEDIUM_BLOB,FIELD_TYPE_LONG_BLOB,FIELD_TYPE_STRING,
-      FIELD_TYPE_VAR_STRING] then
-      begin
-      if bUseResult then  //PMYSQL_FIELD(Field)^.max_length not valid
-        Result.MaxLenghtBytes:=Result.Precision
-      else
-        Result.MaxLenghtBytes:=PlainDriver.GetFieldMaxLength(FieldHandle);
+
+    if Result.ColumnType in [stString, stUnicodeString, stAsciiStream, stUnicodeStream] then
+      Result.ColumnCodePage := ConSettings^.ClientCodePage^.CP
+    else
+      Result.ColumnCodePage := High(Word);
+
+    if Result.ColumnType in [stString, stUnicodeString] then
+       case PlainDriver.GetFieldCharsetNr(FieldHandle) of
+        1, 84, {Big5}
+        95, 96, {cp932 japanese}
+        19, 85, {euckr}
+        24, 86, {gb2312}
+        38, 87, {gbk}
+        13, 88, {sjis}
+        35, 90, 128..151:  {ucs2}
+          begin
+            Result.ColumnDisplaySize := (FieldLength div 4);
+            Result.Precision := GetFieldSize(Result.ColumnType, ConSettings,
+              Result.ColumnDisplaySize, 2, nil);
+          end;
+        33, 83, 192..215, { utf8 }
+        97, 98, { eucjpms}
+        12, 91: {ujis}
+          begin
+            Result.ColumnDisplaySize := (FieldLength div 3);
+            Result.Precision := GetFieldSize(Result.ColumnType,
+              ConSettings, Result.ColumnDisplaySize, 3, nil);
+          end;
+        54, 55, 101..124, {utf16}
+        56, 62, {utf16le}
+        60, 61, 160..183, {utf32}
+        45, 46, 224..247: {utf8mb4}
+          begin
+            Result.ColumnDisplaySize := (FieldLength div 4);
+            Result.Precision := GetFieldSize(Result.ColumnType,
+              ConSettings, Result.ColumnDisplaySize, 4, nil);
+          end;
+        else //1-Byte charsets
+        begin
+          Result.ColumnDisplaySize := FieldLength;
+          Result.Precision := GetFieldSize(Result.ColumnType,
+            ConSettings, Result.ColumnDisplaySize, 1, nil);
+        end;
       end
     else
-      Result.MaxLenghtBytes:=FieldLength;
-    Result.Scale := PlainDriver.GetFieldDecimals(FieldHandle);
-    if (AUTO_INCREMENT_FLAG and FieldFlags <> 0)
-      or (TIMESTAMP_FLAG and FieldFlags <> 0) then
-      Result.AutoIncrement := True;
-    if UNSIGNED_FLAG and FieldFlags <> 0 then
-      Result.Signed := False
+      Result.Precision := min(MaxBlobSize,FieldLength);
+
+    if PlainDriver.GetFieldType(FieldHandle) in [FIELD_TYPE_BLOB,FIELD_TYPE_MEDIUM_BLOB,FIELD_TYPE_LONG_BLOB,FIELD_TYPE_STRING,
+       FIELD_TYPE_VAR_STRING] then
+      if bUseResult then  //PMYSQL_FIELD(Field)^.max_length not valid
+        Result.MaxLenghtBytes := Result.Precision
+      else
+        Result.MaxLenghtBytes := PlainDriver.GetFieldMaxLength(FieldHandle)
     else
-      Result.Signed := True;
+      Result.MaxLenghtBytes := FieldLength;
+    Result.Scale := PlainDriver.GetFieldDecimals(FieldHandle);
+    Result.AutoIncrement := (AUTO_INCREMENT_FLAG and FieldFlags <> 0) or
+      (TIMESTAMP_FLAG and FieldFlags <> 0);
+    Result.Signed := (UNSIGNED_FLAG and FieldFlags) = 0;
     if NOT_NULL_FLAG and FieldFlags <> 0 then
       Result.Nullable := ntNoNulls
     else
@@ -627,5 +658,182 @@ begin
   else
     Result := nil;
 end;
+
+procedure ConvertMySQLColumnInfoFromString(const TypeInfo: String;
+  ConSettings: PZConSettings; out TypeName, TypeInfoSecond:
+  String; out FieldType: TZSQLType; out ColumnSize: Integer; out Precision: Integer);
+var
+  TypeInfoList: TStrings;
+  TypeInfoFirst: String;
+  J, TempPos: Integer;
+begin
+  TypeInfoList := TStringList.Create;
+  TypeInfoFirst := '';
+  TypeInfoSecond := '';
+  Precision := 0;
+  ColumnSize := 0;
+
+  if StrPos(PChar(TypeInfo), '(') <> nil then
+  begin
+    PutSplitString(TypeInfoList, TypeInfo, '()');
+    TypeInfoFirst := TypeInfoList.Strings[0];
+    TypeInfoSecond := TypeInfoList.Strings[1];
+  end
+  else
+    TypeInfoFirst := TypeInfo;
+
+  TypeInfoFirst := LowerCase(TypeInfoFirst);
+  TypeName := TypeInfoFirst;
+
+  FieldType := ConvertMySQLTypeToSQLType(TypeInfoFirst, TypeInfo, Consettings.CPType);
+  { the column type is ENUM}
+  if TypeInfoFirst = 'enum' then
+  begin
+    PutSplitString(TypeInfoList, TypeInfoSecond, ',');
+    for J := 0 to TypeInfoList.Count-1 do
+      ColumnSize := Max(ColumnSize, Length(TypeInfoList.Strings[J]));
+  end
+  else
+    { the column type is decimal }
+    if ( ZFastCode.Pos(',', TypeInfoSecond) > 0 ) and not ( TypeInfoFirst = 'set' ) then
+    begin
+      TempPos := FirstDelimiter(',', TypeInfoSecond);
+      ColumnSize := StrToIntDef(Copy(TypeInfoSecond, 1, TempPos - 1), 0);
+      Precision := StrToIntDef(Copy(TypeInfoSecond, TempPos + 1,
+        Length(TypeInfoSecond) - TempPos), 0);
+    end
+    else
+    begin
+      { the column type is other }
+       if (TypeInfoSecond <> '') and not (TypeInfoFirst = 'set') then
+          ColumnSize := StrToIntDef(TypeInfoSecond, 0)
+       else if TypeInfoFirst = 'tinyint' then
+          ColumnSize := 1
+       else if TypeInfoFirst = 'smallint' then
+          ColumnSize := 6
+       else if TypeInfoFirst = 'mediumint' then
+          ColumnSize := 6
+       else if TypeInfoFirst = 'int' then
+          ColumnSize := 11
+       else if TypeInfoFirst = 'integer' then
+          ColumnSize := 11
+       else if TypeInfoFirst = 'bigint' then
+          ColumnSize := 25
+       else if TypeInfoFirst = 'int24' then
+          ColumnSize := 25
+       else if TypeInfoFirst = 'real' then
+          ColumnSize := 12
+       else if TypeInfoFirst = 'float' then
+          ColumnSize := 12
+       else if TypeInfoFirst = 'decimal' then
+          ColumnSize := 12
+       else if TypeInfoFirst = 'numeric' then
+          ColumnSize := 12
+       else if TypeInfoFirst = 'double' then
+          ColumnSize := 22
+       else if TypeInfoFirst = 'char' then
+          ColumnSize := 1
+       else if TypeInfoFirst = 'varchar' then
+          ColumnSize := 255
+       else if TypeInfoFirst = 'date' then
+          ColumnSize := 10
+       else if TypeInfoFirst = 'time' then
+          ColumnSize := 8
+       else if TypeInfoFirst = 'timestamp' then
+          ColumnSize := 19
+       else if TypeInfoFirst = 'datetime' then
+          ColumnSize := 19
+       else if TypeInfoFirst = 'tinyblob' then
+          ColumnSize := 255
+       else if TypeInfoFirst = 'blob' then
+          ColumnSize := MAXBUF
+       else if TypeInfoFirst = 'mediumblob' then
+          ColumnSize := 16277215//may be 65535
+       else if TypeInfoFirst = 'longblob' then
+          ColumnSize := High(Integer)//2147483657//may be 65535
+       else if TypeInfoFirst = 'tinytext' then
+          ColumnSize := 255
+       else if TypeInfoFirst = 'text' then
+          ColumnSize := 65535
+       else if TypeInfoFirst = 'mediumtext' then
+          ColumnSize := 16277215 //may be 65535
+       else if TypeInfoFirst = 'enum' then
+          ColumnSize := 255
+       else if TypeInfoFirst = 'set' then
+          ColumnSize := 255;
+    end;
+    if FieldType in [stString, stUnicodeString] then
+      ColumnSize := GetFieldSize(FieldType, consettings, ColumnSize,
+        ConSettings.ClientCodePage.CharWidth, nil);
+
+  FreeAndNil(TypeInfoList);
+end;
+
+function MySQLPrepareAnsiSQLParam(Handle: PZMySQLConnect; Value: TZVariant;
+  const DefaultValue: String; ClientVarManager: IZClientVariantManager;
+  PlainDriver: IZMySQLPlainDriver; const InParamType: TZSQLType;
+  const UseDefaults: Boolean; ConSettings: PZConSettings): RawByteString;
+var
+  TempBytes: TBytes;
+  TempBlob: IZBlob;
+begin
+  if ClientVarManager.IsNull(Value) then
+    if UseDefaults and (DefaultValue <> '') then
+      Result := ConSettings^.ConvFuncs.ZStringToRaw(DefaultValue,
+        ConSettings^.CTRL_CP, ConSettings^.ClientCodePage^.CP)
+    else
+      Result := 'NULL'
+  else
+  begin
+    case InParamType of
+      stBoolean:
+        if ClientVarManager.GetAsBoolean(Value) then
+           Result := '''Y'''
+        else
+           Result := '''N''';
+      stByte, stShort, stWord, stSmall, stLongWord, stInteger, stULong, stLong,
+      stFloat, stDouble, stCurrency, stBigDecimal:
+        Result := ClientVarManager.GetAsRawByteString(Value);
+      stBytes:
+        begin
+          TempBytes := ClientVarManager.GetAsBytes(Value);
+          Result := GetSQLHexAnsiString(PAnsiChar(TempBytes), Length(TempBytes));
+        end;
+      stString, stUnicodeString:
+        Result := PlainDriver.EscapeString(Handle, ClientVarManager.GetAsRawByteString(Value), ConSettings, True);
+      stDate:
+        Result := DateTimeToRawSQLDate(ClientVarManager.GetAsDateTime(Value),
+          ConSettings^.WriteFormatSettings, True);
+      stTime:
+        Result := DateTimeToRawSQLTime(ClientVarManager.GetAsDateTime(Value),
+          ConSettings^.WriteFormatSettings, True);
+      stTimestamp:
+        Result := DateTimeToRawSQLTimeStamp(ClientVarManager.GetAsDateTime(Value),
+          ConSettings^.WriteFormatSettings, True);
+      stAsciiStream, stUnicodeStream, stBinaryStream:
+        begin
+          TempBlob := ClientVarManager.GetAsInterface(Value) as IZBlob;
+          if not TempBlob.IsEmpty then
+          begin
+            case InParamType of
+              stBinaryStream:
+                Result := GetSQLHexAnsiString(PAnsichar(TempBlob.GetBuffer), TempBlob.Length);
+              else
+                if TempBlob.IsClob then
+                  Result := PlainDriver.EscapeString(Handle,
+                    TempBlob.GetRawByteString, ConSettings, True)
+                else
+                  Result := PlainDriver.EscapeString(Handle,
+                    GetValidatedAnsiStringFromBuffer(TempBlob.GetBuffer,
+                      TempBlob.Length, ConSettings), ConSettings, True);
+            end;
+          end
+          else
+            Result := 'NULL';
+        end;
+    end;
+  end;
+end;
+
 
 end.

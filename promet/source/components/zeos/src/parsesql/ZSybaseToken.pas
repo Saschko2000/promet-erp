@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,7 +56,8 @@ interface
 {$I ZParseSql.inc}
 
 uses
-  Classes, SysUtils, ZTokenizer, ZCompatibility, ZGenericSqlToken;
+  Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils,
+  ZTokenizer, ZCompatibility, ZGenericSqlToken;
 
 type
 
@@ -73,7 +72,7 @@ type
   TZSybaseQuoteState = class (TZQuoteState)
   public
     function NextToken(Stream: TStream; FirstChar: Char;
-      Tokenizer: TZTokenizer): TZToken; override;
+      {%H-}Tokenizer: TZTokenizer): TZToken; override;
 
     function EncodeString(const Value: string; QuoteChar: Char): string; override;
     function DecodeString(const Value: string; QuoteChar: Char): string; override;
@@ -103,8 +102,8 @@ type
 
   {** Implements a default tokenizer object. }
   TZSybaseTokenizer = class (TZTokenizer)
-  public
-    constructor Create;
+  protected
+    procedure CreateTokenStates; override;
   end;
 
 implementation
@@ -243,7 +242,7 @@ var
 begin
   Result.Value := FirstChar;
   LastChar := #0;
-  while Stream.Read(ReadChar, SizeOf(Char)) > 0 do
+  while Stream.Read(ReadChar{%H-}, SizeOf(Char)) > 0 do
   begin
     if ((LastChar = FirstChar) and (ReadChar <> FirstChar)
       and (FirstChar <> '[')) or ((FirstChar = '[') and (LastChar = ']')) then
@@ -319,7 +318,7 @@ begin
 
   if FirstChar = '-' then
   begin
-    ReadNum := Stream.Read(ReadChar, SizeOf(Char));
+    ReadNum := Stream.Read(ReadChar{%H-}, SizeOf(Char));
     if (ReadNum > 0) and (ReadChar = '-') then
     begin
       Result.TokenType := ttComment;
@@ -373,7 +372,8 @@ end;
 }
 constructor TZSybaseWordState.Create;
 begin
-  SetWordChars(#0, #255, False);
+  SetWordChars(#0, #191, False);
+  SetWordChars(#192, high(char), True);
   SetWordChars('a', 'z', True);
   SetWordChars('A', 'Z', True);
   SetWordChars('0', '9', True);
@@ -381,19 +381,16 @@ begin
   SetWordChars('_', '_', True);
   SetWordChars('@', '@', True);
   SetWordChars('#', '#', True);
-  SetWordChars(Char($c0), Char($ff), True);
 end;
 
 { TZSybaseTokenizer }
 
 {**
-  Constructs a tokenizer with a default state table (as
-  described in the class comment).
+  Constructs a default state table (as described in the class comment).
 }
-constructor TZSybaseTokenizer.Create;
+procedure TZSybaseTokenizer.CreateTokenStates;
 begin
   EscapeState := TZEscapeState.Create;
-  EscapeMarkSequence := '~<|'; //Defaults
   WhitespaceState := TZWhitespaceState.Create;
 
   SymbolState := TZSybaseSymbolState.Create;
@@ -402,13 +399,12 @@ begin
   WordState := TZSybaseWordState.Create;
   CommentState := TZSybaseCommentState.Create;
 
-  SetCharacterState(#0, #255, SymbolState);
-
-  SetCharacterState(#0, ' ', WhitespaceState);
+  SetCharacterState(#0, #32, WhitespaceState);
+  SetCharacterState(#33, #191, SymbolState);
+  SetCharacterState(#192, High(Char), WordState);
 
   SetCharacterState('a', 'z', WordState);
   SetCharacterState('A', 'Z', WordState);
-  SetCharacterState(Chr($c0),  Chr($ff), WordState);
   SetCharacterState('_', '_', WordState);
   SetCharacterState('$', '$', WordState);
   SetCharacterState('@', '@', WordState);

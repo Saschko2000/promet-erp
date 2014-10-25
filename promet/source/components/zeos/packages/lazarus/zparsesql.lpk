@@ -23,7 +23,7 @@
       </Other>
     </CompilerOptions>
     <Description Value="Zeos SQL Parsing Classes and Interfaces"/>
-    <Version Major="7"/>
+    <Version Major="7" Minor="2"/>
     <Files Count="16">
       <Item1>
         <Filename Value="../../src/parsesql/ZSybaseToken.pas"/>
@@ -90,14 +90,18 @@
         <UnitName Value="ZSybaseAnalyser"/>
       </Item16>
     </Files>
-    <RequiredPkgs Count="2">
+    <RequiredPkgs Count="3">
       <Item1>
         <PackageName Value="zcore"/>
+        <MinVersion Major="7" Minor="2" Valid="True"/>
       </Item1>
       <Item2>
+        <PackageName Value="LCL"/>
+      </Item2>
+      <Item3>
         <PackageName Value="FCL"/>
         <MinVersion Major="1" Valid="True"/>
-      </Item2>
+      </Item3>
     </RequiredPkgs>
     <UsageOptions>
       <UnitPath Value="$(PkgOutDir)"/>

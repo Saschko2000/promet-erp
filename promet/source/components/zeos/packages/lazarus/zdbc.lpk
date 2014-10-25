@@ -25,7 +25,7 @@
       </Other>
     </CompilerOptions>
     <Description Value="Zeos Low Level Database API"/>
-    <Version Major="7"/>
+    <Version Major="7" Minor="2"/>
     <Files Count="10">
       <Item1>
         <Filename Value="..\..\src\dbc\ZDbcDbLib.pas"/>
@@ -68,20 +68,26 @@
         <UnitName Value="ZDbcPooled"/>
       </Item10>
     </Files>
-    <RequiredPkgs Count="4">
+    <RequiredPkgs Count="5">
       <Item1>
         <PackageName Value="zplain"/>
+        <MinVersion Major="7" Minor="2" Valid="True"/>
       </Item1>
       <Item2>
         <PackageName Value="zparsesql"/>
+        <MinVersion Major="7" Minor="2" Valid="True"/>
       </Item2>
       <Item3>
         <PackageName Value="zcore"/>
+        <MinVersion Major="7" Minor="2" Valid="True"/>
       </Item3>
       <Item4>
+        <PackageName Value="LCL"/>
+      </Item4>
+      <Item5>
         <PackageName Value="FCL"/>
         <MinVersion Major="1" Valid="True"/>
-      </Item4>
+      </Item5>
     </RequiredPkgs>
     <UsageOptions>
       <UnitPath Value="$(PkgOutDir)"/>

@@ -23,8 +23,8 @@
       </Other>
     </CompilerOptions>
     <Description Value="Zeos Core Classes and Interfaces"/>
-    <Version Major="7"/>
-    <Files Count="14">
+    <Version Major="7" Minor="2"/>
+    <Files Count="16">
       <Item1>
         <Filename Value="../../src/core/ZClasses.pas"/>
         <UnitName Value="ZClasses"/>
@@ -81,12 +81,23 @@
         <Filename Value="../../src/core/ZURL.pas"/>
         <UnitName Value="ZURL"/>
       </Item14>
+      <Item15>
+        <Filename Value="../../src/core/ZEncoding.pas"/>
+        <UnitName Value="ZEncoding"/>
+      </Item15>
+      <Item16>
+        <Filename Value="../../src/core/ZFastCode.pas"/>
+        <UnitName Value="ZFastCode"/>
+      </Item16>
     </Files>
-    <RequiredPkgs Count="1">
+    <RequiredPkgs Count="2">
       <Item1>
+        <PackageName Value="LCL"/>
+      </Item1>
+      <Item2>
         <PackageName Value="FCL"/>
         <MinVersion Major="1" Valid="True"/>
-      </Item1>
+      </Item2>
     </RequiredPkgs>
     <UsageOptions>
       <UnitPath Value="$(PkgOutDir)"/>

@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,12 +56,17 @@ interface
 {$I ZComponent.inc}
 
 uses
-  SysUtils, Classes, Contnrs, ZClasses, ZCompatibility, ZDbcIntfs, ZDbcLogging;
+  SysUtils, Classes, Contnrs, {$IFDEF MSEgui}mclasses,{$ENDIF}
+  ZClasses, ZCompatibility, ZDbcIntfs, ZDbcLogging;
 
 type
 
   {** Repeat declaration of TZLoggingEvent. }
   TZLoggingEvent = ZDbcLogging.TZLoggingEvent;
+
+  {** Repeat declaration of TZLoggingFormatter. }
+  IZLoggingFormatter = ZDbcLogging.IZLoggingFormatter;
+  TZLoggingFormatter = ZDbcLogging.TZLoggingFormatter;
 
   {** Declares event before logging. }
   TZTraceEvent = procedure(Sender: TObject; Event: TZLoggingEvent;
@@ -84,6 +87,7 @@ type
     FTraceList: TObjectList;
     FOnTrace: TZTraceEvent;
     FOnLogTrace: TZTraceLogEvent;
+    FLoggingFormatter : IZLoggingFormatter;
 
     function GetTraceCount: Integer;
     function GetTraceItem(Index: Integer): TZLoggingEvent;
@@ -103,6 +107,7 @@ type
 
     property TraceCount: Integer read GetTraceCount;
     property TraceList[Index: Integer]: TZLoggingEvent read GetTraceItem;
+    property LoggingFormatter: IZLoggingFormatter read FLoggingFormatter write FLoggingFormatter;
   published
     property Active: Boolean read FActive write SetActive default False;
     property AutoSave: Boolean read FAutoSave write FAutoSave default False;
@@ -114,6 +119,7 @@ type
   end;
 
 implementation
+
 
 { TZSQLMonitor }
 
@@ -237,8 +243,7 @@ procedure TZSQLMonitor.SaveToFile(const FileName: string);
 var
   I: Integer;
   Stream: TFileStream;
-Temp: Ansistring; 
-Buffer: PAnsiChar; 
+  Temp: RawByteString;
 begin
   if not FileExists(FileName) then
     Stream := TFileStream.Create(FileName, fmCreate)
@@ -248,8 +253,7 @@ begin
     for I := 0 to FTraceList.Count - 1 do
     begin
       Temp := AnsiString(TZLoggingEvent(FTraceList[I]).AsString + LineEnding);
-Buffer := PAnsiChar(Temp); 
-Stream.Write(Buffer^, StrLen(Buffer) * sizeof(Ansichar)); 
+      Stream.Write(PAnsiChar(Temp)^, Length(Temp));
     end;
   finally
     Stream.Free;
@@ -264,8 +268,7 @@ procedure TZSQLMonitor.LogEvent(Event: TZLoggingEvent);
 var
   LogTrace: Boolean;
   Stream: TFileStream;
-Temp: Ansistring; 
-Buffer: PAnsiChar; 
+  Temp: RawbyteString;
 begin
   LogTrace := True;
   DoTrace(Event, LogTrace);
@@ -289,9 +292,8 @@ begin
       Stream := TFileStream.Create(FFileName, fmOpenReadWrite or fmShareDenyWrite);
     try
       Stream.Seek(0, soFromEnd);
-      Temp := AnsiString(Event.AsString + LineEnding);
-Buffer := PAnsiChar(Temp); 
-Stream.Write(Buffer^, StrLen(Buffer)*sizeof(Ansichar)); 
+      Temp := Event.AsString(FLoggingFormatter) + LineEnding;
+      Stream.Write(PAnsiChar(Temp)^, Length(Temp));
     finally
       Stream.Free;
     end;

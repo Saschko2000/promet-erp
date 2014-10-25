@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -57,14 +55,14 @@ interface
 
 {$I ZDbc.inc}
 
-uses Classes, SysUtils, ZCompatibility, ZClasses, ZSysUtils, ZCollections,
-  ZDbcIntfs, ZDbcStatement, ZDbcDbLib, ZPlainDbLibConstants, ZPlainDbLibDriver;
+uses Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils,
+  ZCompatibility, ZClasses, ZSysUtils, ZCollections, ZDbcIntfs, ZDbcStatement,
+  ZDbcDbLib, ZPlainDbLibConstants, ZPlainDbLibDriver;
 
 type
   {** Implements Generic DBLib Statement. }
   TZDBLibStatement = class(TZAbstractStatement)
   protected
-    FSQL: string;
     FDBLibConnection: IZDBLibConnection;
     FPlainDriver: IZDBLibPlainDriver;
     FHandle: PDBPROCESS;
@@ -72,28 +70,37 @@ type
     FRetrievedResultSet: IZResultSet;
     FRetrievedUpdateCount: Integer;
 
-    procedure InternalExecuteStatement(SQL: string); virtual;
+    procedure InternalExecuteStatement(SQL: RawByteString);
     procedure FetchResults; virtual;
 
   public
     constructor Create(Connection: IZConnection; Info: TStrings);
-    destructor Destroy; override;
+    procedure Close; override;
 
     function GetMoreResults: Boolean; override;
-    function ExecuteQuery(const SQL: string): IZResultSet; override;
-    function ExecuteUpdate(const SQL: string): Integer; override;
-    function Execute(const SQL: string): Boolean; override;
+
+    function ExecuteQuery(const SQL: RawByteString): IZResultSet; override;
+    function ExecuteUpdate(const SQL: RawByteString): Integer; override;
+    function Execute(const SQL: RawByteString): Boolean; override;
   end;
 
   {** Implements Prepared SQL Statement. With emulation}
   TZDBLibPreparedStatementEmulated = class(TZEmulatedPreparedStatement)
+  private
+    FPlainDriver: IZDBLibPlainDriver;
   protected
     function GetEscapeString(Value: string): string;
-    function PrepareSQLParam(ParamIndex: Integer): string; override;
+    function PrepareAnsiSQLQuery: RawByteString; override;
+    function PrepareAnsiSQLParam(ParamIndex: Integer;
+      const NChar: Boolean): RawByteString; reintroduce;
     function CreateExecStatement: IZStatement; override;
   public
     constructor Create(Connection: IZConnection; SQL: string; Info: TStrings);
     function GetMetaData: IZResultSetMetaData; override;
+
+    function ExecuteQueryPrepared: IZResultSet; override;
+    function ExecuteUpdatePrepared: Integer; override;
+    function ExecutePrepared: Boolean; override;
   end;
 
   TZDBLibCallableStatement = class(TZAbstractCallableStatement)
@@ -102,7 +109,6 @@ type
     FDBLibConnection: IZDBLibConnection;
     FPlainDriver: IZDBLibPlainDriver;
     FHandle: PDBPROCESS;
-    FResults: IZCollection;
     FLastRowsAffected: Integer;//Workaround for sybase
     FRetrievedResultSet: IZResultSet;
     FRetrievedUpdateCount: Integer;
@@ -111,10 +117,10 @@ type
     procedure FetchRowCount; virtual;
 
   protected
-    procedure SetInParamCount(NewParamCount: Integer); override;
-
+    procedure SetInParamCount(const NewParamCount: Integer); override;
   public
     constructor Create(Connection: IZConnection; ProcName: string; Info: TStrings);
+    procedure Close; override;
 
     procedure RegisterOutParameter(ParameterIndex: Integer;
       SqlType: Integer); override;
@@ -146,8 +152,10 @@ type
 implementation
 
 uses
-  Types, ZDbcLogging, ZDbcCachedResultSet, ZDbcDbLibUtils, ZDbcDbLibResultSet,
-  ZVariant;
+  Types, Math,
+  ZDbcLogging, ZDbcCachedResultSet, ZDbcDbLibUtils, ZDbcDbLibResultSet,
+  ZVariant, ZDbcUtils, ZEncoding, ZDbcResultSet
+  {$IFDEF WITH_UNITANSISTRINGS}, AnsiStrings{$ENDIF};
 
 constructor TZUpdateCount.Create(ACount: Integer);
 begin
@@ -183,10 +191,17 @@ begin
   FResults := TZCollection.Create;
 end;
 
-destructor TZDBLibStatement.Destroy;
+procedure TZDBLibStatement.Close;
+var
+  I: Integer;
+  RS: IZResultSet;
 begin
+  for i := 0 to FResults.Count -1 do
+    if supports(FResults[i], IZResultSet, RS) then    //possible IZUpdateCount
+      RS.Close;
   FResults.Clear;
-  inherited Destroy;
+  FRetrievedResultSet := nil;
+  inherited Close;
 end;
 
 {**
@@ -196,33 +211,27 @@ end;
   @param Handle a DBLib connection handle.
   @sql string containing the statements to execute
 }
-procedure TZDBLibStatement.InternalExecuteStatement(SQL: string);
+procedure TZDBLibStatement.InternalExecuteStatement(SQL: RawByteString);
+var Ansi: RawByteString;
 begin
+  if FDBLibConnection.GetProvider = dpMsSQL then
+    //This one is to avoid a bug in dblib interface as it drops a single backslash before line end
+    Ansi := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}StringReplace(SQL, '\'#13, '\\'#13, [rfReplaceAll])
+  else
+    //This one is to avoid sybase error: Invalid operator for datatype op: is null type: VOID TYPE
+    Ansi := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}StringReplace(SQL, ' AND NULL IS NULL', '', [rfReplaceAll]);
+
   FHandle := FDBLibConnection.GetConnectionHandle;
   FPlainDriver := FDBLibConnection.GetPlainDriver;
   if FPlainDriver.dbcancel(FHandle) <> DBSUCCEED then
     FDBLibConnection.CheckDBLibError(lcExecute, SQL);
-//This one is to avoid a bug in dblib interface as it drops a single backslash before line end
-  if FDBLibConnection.GetProvider = dpMsSQL then
-  begin
-    SQL := StringReplace(Sql, '\'#13, '\\'#13, [rfReplaceAll]);
-    if FPlainDriver.dbcmd(FHandle, PAnsiChar(AnsiString(SQL))) <> DBSUCCEED then
-      FDBLibConnection.CheckDBLibError(lcExecute, SQL);
-  end;
-//This one is to avoid sybase error: Invalid operator for datatype op: is null type: VOID TYPE
-  if FDBLibConnection.GetProvider = dpSybase then
-  begin
-    SQL := StringReplace(Sql, ' AND NULL IS NULL', '', [rfReplaceAll]);
-    {$IFDEF DELPHI12_UP}
-    if FPlainDriver.dbcmd(FHandle, PAnsiChar(UTF8String(SQL))) <> DBSUCCEED then
-    {$ELSE}
-    if FPlainDriver.dbcmd(FHandle, PAnsiChar(SQL)) <> DBSUCCEED then
-    {$ENDIF}
-      FDBLibConnection.CheckDBLibError(lcExecute, SQL);
-  end;
+
+  if FPlainDriver.dbcmd(FHandle, Pointer(Ansi)) <> DBSUCCEED then
+    FDBLibConnection.CheckDBLibError(lcExecute, SQL);
+
   if FPlainDriver.dbsqlexec(FHandle) <> DBSUCCEED then
     FDBLibConnection.CheckDBLibError(lcExecute, SQL);
-  DriverManager.LogMessage(lcExecute, FPlainDriver.GetProtocol, SQL);
+  DriverManager.LogMessage(lcExecute, ConSettings^.Protocol, SQL);
 end;
 
 {**
@@ -278,8 +287,12 @@ procedure TZDBLibStatement.FetchResults;
 var
   NativeResultSet: TZDBLibResultSet;
   CachedResultSet: TZCachedResultSet;
+  RS: IZResultSet;
   RowsAffected: Integer;
 begin
+  for RowsAffected := 0 to FResults.Count -1 do
+    if Supports(FResults[RowsAffected], IZResultSet, RS) then
+      RS.Close;
   FResults.Clear;
 //Sybase does not seem to return dbCount at all, so a workaround is made
   RowsAffected := -2;
@@ -287,11 +300,10 @@ begin
   begin
     if FPlainDriver.dbcmdrow(FHandle) = DBSUCCEED then
     begin
-      NativeResultSet := TZDBLibResultSet.Create(Self, FSQL);
+      NativeResultSet := TZDBLibResultSet.Create(Self, Self.SQL);
       NativeResultSet.SetConcurrency(rcReadOnly);
       CachedResultSet := TZCachedResultSet.Create(NativeResultSet,
-        FSQL, TZDBLibCachedResolver.Create(Self, NativeResultSet.GetMetaData),
-          ClientCodePage);
+        Self.SQL, TZDBLibCachedResolver.Create(Self, NativeResultSet.GetMetaData), ConSettings);
       CachedResultSet.SetType(rtScrollInsensitive);//!!!Cached resultsets are allways this
       CachedResultSet.Last;
       CachedResultSet.BeforeFirst; //!!!Just to invoke fetchall
@@ -317,7 +329,7 @@ begin
         NativeResultSet := TZDBLibResultSet.Create(Self, 'select @@rowcount');
         try
           if NativeResultset.Next then
-            RowsAffected := NativeResultSet.GetInt(1);
+            RowsAffected := NativeResultSet.GetInt(FirstDbcIndex);
         finally
           NativeResultSet.Close;
         end;
@@ -335,12 +347,13 @@ end;
   @return a <code>ResultSet</code> object that contains the data produced by the
     given query; never <code>null</code>
 }
-function TZDBLibStatement.ExecuteQuery(const SQL: string): IZResultSet;
+function TZDBLibStatement.ExecuteQuery(const SQL: RawByteString): IZResultSet;
 begin
   Result := nil;
-  FSQL := SQL;
+  if ASQL <> SQL then
+    ASQL := SQL;
   try
-    InternalExecuteStatement(SQL);
+    InternalExecuteStatement(ASQL);
     FetchResults;
     repeat
       if GetMoreResults then
@@ -364,10 +377,11 @@ end;
   @return either the row count for <code>INSERT</code>, <code>UPDATE</code>
     or <code>DELETE</code> statements, or 0 for SQL statements that return nothing
 }
-function TZDBLibStatement.ExecuteUpdate(const SQL: string): Integer;
+function TZDBLibStatement.ExecuteUpdate(const SQL: RawByteString): Integer;
 begin
-  FSQL := SQL;
-  InternalExecuteStatement(SQL);
+  if ASQL <> SQL then
+    ASQL := SQL;
+  InternalExecuteStatement(ASQL);
   FetchResults;
   GetMoreResults;
   Result := FRetrievedUpdateCount;
@@ -394,10 +408,11 @@ end;
   @return <code>true</code> if the next result is a <code>ResultSet</code> object;
   <code>false</code> if it is an update count or there are no more results
 }
-function TZDBLibStatement.Execute(const SQL: string): Boolean;
+function TZDBLibStatement.Execute(const SQL: RawByteString): Boolean;
 begin
-  FSQL := SQL;
-  InternalExecuteStatement(SQL);
+  if ASQL <> SQL then
+    ASQL := SQL;
+  InternalExecuteStatement(ASQL);
   FetchResults;
   Result := GetMoreResults;
   LastResultSet := FRetrievedResultSet;
@@ -417,7 +432,9 @@ constructor TZDBLibPreparedStatementEmulated.Create(Connection: IZConnection;
   SQL: string; Info: TStrings);
 begin
   inherited Create(Connection, SQL, Info);
+  FPlainDriver := (Connection as IZDBLibConnection).GetPlainDriver;
   ResultSetType := rtScrollInsensitive;
+  FNeedNCharDetection := True;
 end;
 
 {**
@@ -430,20 +447,44 @@ begin
   Result := AnsiQuotedStr(Value, '''');
 end;
 
+function TZDBLibPreparedStatementEmulated.PrepareAnsiSQLQuery: RawByteString;
+var
+  I: Integer;
+  ParamIndex: Integer;
+begin
+  ParamIndex := 0;
+  Result := '';
+  TokenizeSQLQueryRaw;
+
+  for I := 0 to High(CachedQueryRaw) do
+  begin
+    if IsParamIndex[i] then
+    begin
+      Result := Result + PrepareAnsiSQLParam(ParamIndex, IsNCharIndex[i]);
+      Inc(ParamIndex);
+    end
+    else
+      Result := Result + CachedQueryRaw[I];
+  end;
+  {$IFNDEF UNICODE}
+  if GetConnection.AutoEncodeStrings then
+     Result := GetConnection.GetDriver.GetTokenizer.GetEscapeString(Result);
+  {$ENDIF}
+end;
 {**
   Prepares an SQL parameter for the query.
   @param ParameterIndex the first parameter is 1, the second is 2, ...
   @return a string representation of the parameter.
 }
-function TZDBLibPreparedStatementEmulated.PrepareSQLParam(
-  ParamIndex: Integer): string;
+function TZDBLibPreparedStatementEmulated.PrepareAnsiSQLParam(ParamIndex: Integer;
+  const NChar: Boolean): RawByteString;
 begin
   if InParamCount <= ParamIndex then
     Result := 'NULL'
   else
   begin
     Result := PrepareSQLParameter(InParamValues[ParamIndex],
-      InParamTypes[ParamIndex]);
+      InParamTypes[ParamIndex], ClientVarManager, ConSettings, NChar);
   end;
 end;
 
@@ -455,6 +496,45 @@ end;
 function TZDBLibPreparedStatementEmulated.GetMetaData: IZResultSetMetaData;
 begin
   Result := nil;
+end;
+
+{**
+  Executes the SQL query in this <code>PreparedStatement</code> object
+  and returns the result set generated by the query.
+
+  @return a <code>ResultSet</code> object that contains the data produced by the
+    query; never <code>null</code>
+}
+function TZDBLibPreparedStatementEmulated.ExecutePrepared: Boolean;
+begin
+  Result := inherited Execute(PrepareAnsiSQLQuery);
+end;
+
+{**
+  Executes the SQL query in this <code>PreparedStatement</code> object
+  and returns the result set generated by the query.
+
+  @return a <code>ResultSet</code> object that contains the data produced by the
+    query; never <code>null</code>
+}
+function TZDBLibPreparedStatementEmulated.ExecuteQueryPrepared: IZResultSet;
+begin
+  Result := inherited ExecuteQuery(PrepareAnsiSQLQuery);
+end;
+
+{**
+  Executes the SQL INSERT, UPDATE or DELETE statement
+  in this <code>PreparedStatement</code> object.
+  In addition,
+  SQL statements that return nothing, such as SQL DDL statements,
+  can be executed.
+
+  @return either the row count for INSERT, UPDATE or DELETE statements;
+  or 0 for SQL statements that return nothing
+}
+function TZDBLibPreparedStatementEmulated.ExecuteUpdatePrepared: Integer;
+begin
+  Result := inherited ExecuteUpdate(PrepareAnsiSQLQuery);
 end;
 
 {**
@@ -476,7 +556,12 @@ begin
     FPLainDriver := FDBLibConnection.GetPlainDriver;
   FHandle := FDBLibConnection.GetConnectionHandle;
   ResultSetType := rtScrollInsensitive;
-  FResults := TZCollection.Create;
+end;
+
+procedure TZDBLibCallableStatement.Close;
+begin
+  FRetrievedResultSet := nil;
+  inherited Close;
 end;
 
 procedure TZDBLibCallableStatement.FetchResults;
@@ -493,19 +578,18 @@ begin
       NativeResultSet := TZDBLibResultSet.Create(Self, FSQL);
       NativeResultSet.SetConcurrency(rcReadOnly);
       CachedResultSet := TZCachedResultSet.Create(NativeResultSet, FSQL,
-        TZDBLibCachedResolver.Create(Self, NativeResultSet.GetMetaData),
-        ClientCodePage);
+        TZDBLibCachedResolver.Create(Self, NativeResultSet.GetMetaData), ConSettings);
       CachedResultSet.SetType(rtScrollInsensitive);//!!!Cached resultsets are allways this
       CachedResultSet.Last;
       CachedResultSet.BeforeFirst; //!!!Just to invoke fetchall
       CachedResultSet.SetConcurrency(GetResultSetConcurrency);
-      FResults.Add(CachedResultSet);
+      FResultSets.Add(CachedResultSet);
     end
     else
     begin
       FLastRowsAffected := FPlainDriver.dbCount(FHandle);
       if FLastRowsAffected > -1 then
-        FResults.Add(TZUpdateCount.Create(FLastRowsAffected));
+        FResultSets.Add(TZUpdateCount.Create(FLastRowsAffected));
     end;
   end;
   FDBLibConnection.CheckDBLibError(lcOther, 'FETCHRESULTS');
@@ -528,7 +612,7 @@ begin
       finally
         NativeResultset.Close;
       end;
-      FResults.Add(TZUpdateCount.Create(FLastRowsAffected));
+      FResultSets.Add(TZUpdateCount.Create(FLastRowsAffected));
     finally
       FPlainDriver.dbCancel(FHandle);
     end;
@@ -559,19 +643,19 @@ begin
   Result := False;
   FRetrievedResultSet := nil;
   FRetrievedUpdateCount := -1;
-  if FResults.Count > 0 then
+  if FResultSets.Count > 0 then
   begin
     try
-      Result := FResults.Items[0].QueryInterface(IZResultSet, ResultSet) = 0;
+      Result := Supports(FResultSets[0], IZResultSet, ResultSet);
       if Result then
       begin
         FRetrievedResultSet := ResultSet;
         FRetrievedUpdateCount := 0;
       end
       else
-        if FResults.Items[0].QueryInterface(IZUpdateCount, UpdateCount) = 0 then
+        if Supports(FResultSets[0], IZUpdateCount, UpdateCount) then
           FRetrievedUpdateCount := UpdateCount.GetCount;
-      FResults.Delete(0);
+      FResultSets.Delete(0);
     finally
       ResultSet := nil;
       UpdateCount := nil;
@@ -598,35 +682,38 @@ end;
 procedure TZDBLibCallableStatement.RegisterOutParameter(ParameterIndex: Integer;
   SqlType: Integer);
 begin
-  SetOutParamCount(ParameterIndex);
-  OutParamTypes[ParameterIndex - 1] := TZSqlType(SqlType);
+  SetOutParamCount(ParameterIndex{$IFDEF GENERIC_INDEX}+1{$ENDIF});
+  OutParamTypes[ParameterIndex{$IFNDEF GENERIC_INDEX}-1{$ENDIF}] := TZSqlType(SqlType);
 
   //Count inparams must equal count outparams to correct set paramters
-  if InParamCount < ParameterIndex then
-    SetInParamCount(ParameterIndex);
+  if InParamCount < ParameterIndex{$IFDEF GENERIC_INDEX}+1{$ENDIF} then
+    SetInParamCount(ParameterIndex{$IFDEF GENERIC_INDEX}+1{$ENDIF});
 end;
 
 function TZDBLibCallableStatement.ExecutePrepared: Boolean;
 var
-  S: string;
+  S: RawByteString;
   I, ParamIndex, DatLen: Integer;
   RetParam: Byte;
   DatBoolean: Boolean;
   DatByte: Byte;
-  DatShort: SmallInt;
+  DatSmall: SmallInt;
   DatInteger: Integer;
   DatFloat: Single;
   DatDouble: Double;
-  DatString: AnsiString;
-  DatMoney: Currency;
+  DatString: RawByteString;
+  CharRec: TZCharRec;
   DatDBDATETIME: DBDATETIME;
-  DatBytes: TByteDynArray;
+  DatBytes: TBytes;
   Temp: TZVariant;
   ParamType: TZSQLType;
   TempBlob: IZBlob;
+  P: Pointer;
+  Len: NativeUInt;
+  RetType: DBINT;
 begin
-  S := Trim(Sql);
-  if FPLainDriver.dbRPCInit(FHandle, PAnsiChar(AnsiString(S)), 0) <> DBSUCCEED then
+  S := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}Trim(ASql);
+  if FPLainDriver.dbRPCInit(FHandle, Pointer(S), 0) <> DBSUCCEED then
     FDBLibConnection.CheckDBLibError(lcOther, 'EXECUTEPREPARED:dbRPCInit');
 
   for I := 1 to InParamCount - 1 do//The 0 parameter is the return value
@@ -639,112 +726,141 @@ begin
     if ParamType = stUnknown then
       ParamType := OutParamTypes[I];
 
-    if DefVarManager.IsNull(InParamValues[I]) and (InParamTypes[I] <> stUnknown) then
-    begin
-      if FDBLibConnection.FreeTDS then
-        FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-        ConvertSqlTypeToFreeTDSType(InParamTypes[I]), -1, 0, nil)
-      else
-        FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-        ConvertSqlTypeToDBLibType(InParamTypes[I]), -1, 0, nil)
-    end
+    if SoftVarManager.IsNull(InParamValues[I]) and (InParamTypes[I] <> stUnknown) then
+      FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
+        Ord(ConvertSqlTypeToTDSType(InParamTypes[I])), -1, 0, nil)
     else
-    begin
       case ParamType of
         stBoolean:
           begin
             DatBoolean := SoftVarManager.GetAsBoolean(InParamValues[I]);
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLINT1], -1, -1, @DatBoolean);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsBit), -1, -1, @DatBoolean);
           end;
         stByte:
           begin
             DatByte := Byte(SoftVarManager.GetAsInteger(InParamValues[I]));
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLINT1], -1, -1, @DatByte);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsInt1), -1, -1, @DatByte);
           end;
-        stShort:
+        stShort, stSmall:
           begin
-            DatShort := SmallInt(SoftVarManager.GetAsInteger(InParamValues[I]));
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLINT2], -1, -1, @DatShort);
+            DatSmall := SmallInt(SoftVarManager.GetAsInteger(InParamValues[I]));
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsInt2), -1, -1, @DatSmall);
           end;
-        stInteger, stLong:
+        stWord, stInteger:
           begin
             DatInteger := Integer(SoftVarManager.GetAsInteger(InParamValues[I]));
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLINT4], -1, -1, @DatInteger);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsInt4), -1, -1, @DatInteger);
           end;
         stFloat:
           begin
             DatFloat := SoftVarManager.GetAsFloat(InParamValues[I]);
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLFLT4], -1, -1, @DatFloat);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsFlt4), -1, -1, @DatFloat);
           end;
-        stDouble, stBigDecimal:
+        stLong, stULong, stDouble, stBigDecimal, stCurrency:
           begin
             DatDouble := SoftVarManager.GetAsFloat(InParamValues[I]);
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLFLT8], -1, -1, @DatDouble);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsFlt8), -1, -1, @DatDouble);
           end;
-        stString:
+        stString, stUnicodeString:
+          if IsNCharIndex[i] then
           begin
-            DatString := AnsiString(SoftVarManager.GetAsString(InParamValues[I]) );
-            if DatString = ''then
-              DatLen := 1
-            else
-              DatLen := Length(DatString);
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLCHAR], MaxInt, DatLen, PAnsiChar(DatString));
-          end;
-        stUnicodeString:
+            CharRec := ClientVarManager.GetAsCharRec(InParamValues[I], zCP_UTF8);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsChar),
+              MaxInt, Max(1, CharRec.Len), CharRec.P);
+          end
+          else
           begin
-            DatString := UTF8Encode(SoftVarManager.GetAsUnicodeString(InParamValues[I]));
-            if DatString = '' then
-              DatLen := 1
-            else
-              DatLen := Length(DatString);
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLCHAR], MaxInt, DatLen, PAnsiChar(DatString));
+            CharRec := ClientVarManager.GetAsCharRec(InParamValues[I], ConSettings^.ClientCodePage^.CP);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsChar),
+              MaxInt, Max(1, CharRec.Len), CharRec.P);
           end;
         stDate:
           begin
-            DatString := AnsiString(FormatDateTime('yyyymmdd',
-              SoftVarManager.GetAsDateTime(InParamValues[I])));
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLCHAR], MaxInt, Length(DatString), PAnsiChar(DatString));
+            DatString := DateTimeToRawSQLDate(ClientVarManager.GetAsDateTime(InParamValues[I]),
+              ConSettings^.WriteFormatSettings, False);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, ord(tdsChar),
+              MaxInt, ConSettings^.WriteFormatSettings.DateFormatLen, Pointer(DatString));
           end;
         stTime:
           begin
-            DatString := AnsiString(FormatDateTime('hh":"mm":"ss":"zzz',
-              SoftVarManager.GetAsDateTime(InParamValues[I])));
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLCHAR], MaxInt, Length(DatString), PAnsiChar(DatString));
+            DatString := DateTimeToRawSQLTime(ClientVarManager.GetAsDateTime(InParamValues[I]),
+              ConSettings^.WriteFormatSettings, False);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, ord(tdsChar),
+              MaxInt, ConSettings^.WriteFormatSettings.TimeFormatLen, Pointer(DatString));
           end;
         stTimeStamp:
           begin
-            DatString := AnsiString(FormatDateTime('yyyymmdd hh":"mm":"ss":"zzz',
-              SoftVarManager.GetAsDateTime(InParamValues[I])));
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLCHAR], MaxInt, Length(DatString), PAnsiChar(DatString));
+            DatString := DateTimeToRawSQLTimeStamp(ClientVarManager.GetAsDateTime(InParamValues[I]),
+              ConSettings^.WriteFormatSettings, False);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, ord(tdsChar),
+              MaxInt, ConSettings^.WriteFormatSettings.DateTimeFormatLen, Pointer(DatString));
           end;
-        stAsciiStream, stUnicodeStream:
+        stAsciiStream, stUnicodeStream, stBinaryStream:
           begin
             TempBlob := SoftVarManager.GetAsInterface(InParamValues[I]) as IZBlob;
-            DatString := TempBlob.GetString;
-            if DatString = ''then
-              DatLen := 1
+            if ParamType = stBinaryStream then
+              FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsImage),
+                MaxInt, Max(1, TempBlob.Length), TempBlob.GetBuffer)
             else
-              DatLen := Length(DatString);
-            FPlainDriver.dbRpcParam(FHandle, nil, RetParam,
-              FPlainDriver.GetVariables.datatypes[Z_SQLTEXT], FPlainDriver.GetVariables.dboptions[Z_TEXTSIZE], DatLen, PAnsiChar(DatString));
+              if IsNCharIndex[i] then
+              begin
+                if TempBlob.IsClob then
+                begin
+                  CharRec.P := TempBlob.GetPAnsiChar(zCP_UTF8);
+                  CharRec.Len := Max(1, TempBlob.Length);
+                end
+                else
+                begin
+                  DatString := GetValidatedAnsiStringFromBuffer(TempBlob.GetBuffer, TempBlob.Length, ConSettings, zCP_UTF8);
+                  if Pointer(DatString) = nil then
+                  begin
+                    CharRec.P := PEmptyAnsiString;
+                    CharRec.Len := 1;
+                  end
+                  else
+                  begin
+                    CharRec.P := Pointer(DatString);
+                    CharRec.Len := {%H-}PLengthInt(NativeUInt(DatString) - StringLenOffSet)^;
+                  end;
+                end;
+                FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsText),
+                    MaxInt, CharRec.Len, CharRec.P)
+              end
+              else
+              begin
+                if TempBlob.IsClob then
+                begin
+                  CharRec.P := TempBlob.GetPAnsiChar(ConSettings^.ClientCodePage^.CP);
+                  CharRec.Len := Max(1, TempBlob.Length);
+                end
+                else
+                begin
+                  DatString := GetValidatedAnsiStringFromBuffer(TempBlob.GetBuffer,
+                    TempBlob.Length, ConSettings);
+                  if Pointer(DatString) = nil then
+                  begin
+                    CharRec.P := PEmptyAnsiString;
+                    CharRec.Len := 1;
+                  end
+                  else
+                  begin
+                    CharRec.P := Pointer(DatString);
+                    CharRec.Len := {%H-}PLengthInt(NativeUInt(DatString) - StringLenOffSet)^;;
+                  end;
+                end;
+                FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsText),
+                    MaxInt, CharRec.Len, CharRec.P)
+              end;
           end;
-  //      stBytes,
-  //      stBinaryStream
+        stBytes:
+          begin
+            DatBytes := SoftVarManager.GetAsBytes(InParamValues[I]);
+            FPlainDriver.dbRpcParam(FHandle, nil, RetParam, Ord(tdsBinary),
+              MaxInt, Length(DatBytes), Pointer(DatBytes));
+          end;
       else
-        FPlainDriver.dbRpcParam(FHandle, nil, 0, FPlainDriver.GetVariables.datatypes[Z_SQLCHAR], 0, 0, nil);
+        FPlainDriver.dbRpcParam(FHandle, nil, 0, Ord(tdsChar), 0, 0, nil);
     end;
-  end;
   end;
 
   if FPLainDriver.dbRpcExec(FHandle) <> DBSUCCEED then
@@ -753,9 +869,11 @@ begin
   Result := GetMoreResults;
 
   if FPLainDriver.dbHasRetStat(FHandle) then
-    DefVarManager.SetAsInteger(Temp, FPlainDriver.dbRetStatus(FHandle))
+    Temp := EncodeInteger(FPlainDriver.dbRetStatus(FHandle))
   else
     Temp := NullVariant;
+  if Length(OutParamValues) = 0 then // check if DynArray is initialized for RETURN_VALUE
+    SetOutParamCount(1);
   OutParamValues[0] := Temp; //set function RETURN_VALUE
 
   ParamIndex := 1;
@@ -763,149 +881,119 @@ begin
   begin
     if OutParamTypes[I] = stUnknown then
       Continue;
-    if FPlainDriver.dbRetData(FHandle, ParamIndex) = nil then
+    RetType := FPLainDriver.dbRetType(FHandle, ParamIndex);
+    if (FPlainDriver.dbRetData(FHandle, ParamIndex) = nil) or
+       (RetType = Ord(tdsVoid)) then
       Temp := NullVariant
     else
-    begin
-      if FDBLibConnection.FreeTDS then
-        case FPLainDriver.dbRetType(FHandle, ParamIndex) of
-          TDSSQLCHAR, TDSSQLBINARY:
-            begin
-              DatLen := FPLainDriver.dbRetLen(FHandle, ParamIndex);
-              SetLength(DatBytes, DatLen);
-              Move(PAnsiChar(FPLainDriver.dbRetData(FHandle, ParamIndex))^,
-                DatBytes[0], Length(DatBytes));
-              DefVarManager.SetAsString(Temp, String(BytesToStr(DatBytes)));
+      case TTDSType(RetType) of
+        tdsNVarChar, tdsBigNChar, tdsBigNVarChar:
+          begin
+            ZSetString(FPLainDriver.dbRetData(FHandle, ParamIndex),
+              FPLainDriver.dbRetLen(FHandle, ParamIndex), DatString);
+            ClientVarManager.SetAsUTF8String(Temp, DatString);
+          end;
+        tdsChar, tdsVarchar, tdsBigChar, tdsBigVarChar:
+          begin
+            P := FPLainDriver.dbRetData(FHandle, ParamIndex);
+            Len := NativeUInt(FPLainDriver.dbRetLen(FHandle, ParamIndex));
+            case ZDetectUTF8Encoding(P, Len) of
+              etUTF8:
+                begin
+                  ZSetString(P, Len, DatString);
+                  ClientVarManager.SetAsUTF8String(Temp, DatString);
+                end;
+              etUSASCII:
+                begin
+                  ZSetString(P, Len, DatString);
+                  ClientVarManager.SetAsRawByteString(Temp, DatString);
+                end;
+              else
+                ClientVarManager.SetAsUnicodeString(Temp, USASCII7ToUnicodeString(P, Len));
             end;
-          TDSSQLINT1:
-            DefVarManager.SetAsInteger(Temp,
-              PByte(FPlainDriver.dbRetData(FHandle, ParamIndex))^);
-          TDSSQLINT2:
-            DefVarManager.SetAsInteger(Temp,
-              PSmallInt(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          TDSSQLINT4:
-            DefVarManager.SetAsInteger(Temp,
-              PInteger(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          TDSSQLFLT4:
-            DefVarManager.SetAsFloat(Temp,
-              PSingle(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          TDSSQLFLT8:
-            DefVarManager.SetAsFloat(Temp,
-              PDouble(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          TDSSQLMONEY4:
-            begin
-              FPlainDriver.dbConvert(FHandle, TDSSQLMONEY4,
-                FPlainDriver.dbRetData(FHandle, ParamIndex), 4, TDSSQLMONEY,
-                @DatMoney, 8);
-              DefVarManager.SetAsFloat(Temp, DatMoney);
-            end;
-          TDSSQLMONEY:
-            DefVarManager.SetAsFloat(Temp,
-              PCurrency(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          TDSSQLDECIMAL:
-            begin
-              FPLainDriver.dbConvert(FHandle, TDSSQLDECIMAL,
-                FPLainDriver.dbRetData(FHandle, ParamIndex),
-                FPLainDriver.dbRetLen(FHandle, ParamIndex),
-                TDSSQLFLT8, @DatDouble, 8);
-              DefVarManager.SetAsFloat(Temp, DatDouble);
-            end;
-          TDSSQLNUMERIC:
-            begin
-              FPLainDriver.dbConvert(FHandle, TDSSQLNUMERIC,
-                FPLainDriver.dbRetData(FHandle, ParamIndex),
-                FPLainDriver.dbRetLen(FHandle, ParamIndex),
-                TDSSQLFLT8, @DatDouble, 8);
-              DefVarManager.SetAsFloat(Temp, DatDouble);
-            end;
-          TDSSQLDATETIM4:
-            begin
-              FPLainDriver.dbConvert(FHandle, TDSSQLDATETIM4,
-                FPLainDriver.dbRetData(FHandle, ParamIndex), 4,
-                TDSSQLDATETIME, @DatDBDATETIME, 8);
-              DefVarManager.SetAsDateTime(Temp,
-                DatDBDATETIME.dtdays + 2 + (DatDBDATETIME.dttime / 25920000));
-            end;
-          TDSSQLDATETIME:
-            begin
-              DatDBDATETIME := PDBDATETIME(
-                FPLainDriver.dbRetData(FHandle, ParamIndex))^;
-              DefVarManager.SetAsDateTime(Temp,
-                DatDBDATETIME.dtdays + 2 + (DatDBDATETIME.dttime / 25920000));
-            end;
-          else
-            Temp := NullVariant;
-        end
-      else
-        case FPLainDriver.dbRetType(FHandle, ParamIndex) of
-          DBLIBSQLCHAR, DBLIBSQLBINARY:
-            begin
-              DatLen := FPLainDriver.dbRetLen(FHandle, ParamIndex);
-              SetLength(DatBytes, DatLen);
-              Move(PAnsiChar(FPLainDriver.dbRetData(FHandle, ParamIndex))^,
-                DatBytes[0], Length(DatBytes));
-              DefVarManager.SetAsString(Temp, String(BytesToStr(DatBytes)));
-            end;
-          DBLIBSQLINT1:
-            DefVarManager.SetAsInteger(Temp,
-              PByte(FPlainDriver.dbRetData(FHandle, ParamIndex))^);
-          DBLIBSQLINT2:
-            DefVarManager.SetAsInteger(Temp,
-              PSmallInt(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          DBLIBSQLINT4:
-            DefVarManager.SetAsInteger(Temp,
-              PInteger(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          DBLIBSQLFLT4:
-            DefVarManager.SetAsFloat(Temp,
-              PSingle(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          DBLIBSQLFLT8:
-            DefVarManager.SetAsFloat(Temp,
-              PDouble(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          DBLIBSQLMONEY4:
-            begin
-              FPlainDriver.dbConvert(FHandle, DBLIBSQLMONEY4,
-                FPlainDriver.dbRetData(FHandle, ParamIndex), 4, DBLIBSQLMONEY,
-                @DatMoney, 8);
-              DefVarManager.SetAsFloat(Temp, DatMoney);
-            end;
-          DBLIBSQLMONEY:
-            DefVarManager.SetAsFloat(Temp,
-              PCurrency(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
-          DBLIBSQLDECIMAL:
-            begin
-              FPLainDriver.dbConvert(FHandle, DBLIBSQLDECIMAL,
-                FPLainDriver.dbRetData(FHandle, ParamIndex),
-                FPLainDriver.dbRetLen(FHandle, ParamIndex),
-                DBLIBSQLFLT8, @DatDouble, 8);
-              DefVarManager.SetAsFloat(Temp, DatDouble);
-            end;
-          DBLIBSQLNUMERIC:
-            begin
-              FPLainDriver.dbConvert(FHandle, DBLIBSQLNUMERIC,
-                FPLainDriver.dbRetData(FHandle, ParamIndex),
-                FPLainDriver.dbRetLen(FHandle, ParamIndex),
-                DBLIBSQLFLT8, @DatDouble, 8);
-              DefVarManager.SetAsFloat(Temp, DatDouble);
-            end;
-          DBLIBSQLDATETIM4:
-            begin
-              FPLainDriver.dbConvert(FHandle, DBLIBSQLDATETIM4,
-                FPLainDriver.dbRetData(FHandle, ParamIndex), 4,
-                DBLIBSQLDATETIME, @DatDBDATETIME, 8);
-              DefVarManager.SetAsDateTime(Temp,
-                DatDBDATETIME.dtdays + 2 + (DatDBDATETIME.dttime / 25920000));
-            end;
-          DBLIBSQLDATETIME:
-            begin
-              DatDBDATETIME := PDBDATETIME(
-                FPLainDriver.dbRetData(FHandle, ParamIndex))^;
-              DefVarManager.SetAsDateTime(Temp,
-                DatDBDATETIME.dtdays + 2 + (DatDBDATETIME.dttime / 25920000));
-            end;
-          else
-            Temp := NullVariant;
-        end;
-    end;
+          end;
+        tdsBinary, tdsVarBinary, tdsBigBinary, tdsBigVarBinary:
+          begin
+            DatLen := FPLainDriver.dbRetLen(FHandle, ParamIndex);
+            SetLength(DatBytes, DatLen);
+            Move(FPLainDriver.dbRetData(FHandle, ParamIndex)^,
+              Pointer(DatBytes)^, DatLen);
+            SoftVarManager.SetAsBytes(Temp, DatBytes);
+          end;
+        tdsInt1:
+          SoftVarManager.SetAsInteger(Temp,
+            PByte(FPlainDriver.dbRetData(FHandle, ParamIndex))^);
+        tdsInt2:
+          SoftVarManager.SetAsInteger(Temp,
+            PSmallInt(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
+        tdsInt4:
+          SoftVarManager.SetAsInteger(Temp,
+            PLongInt(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
+        tdsInt8:
+          SoftVarManager.SetAsInteger(Temp,
+            PInt64(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
+        tdsFlt4:
+          SoftVarManager.SetAsFloat(Temp,
+            PSingle(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
+        tdsFlt8:
+          SoftVarManager.SetAsFloat(Temp,
+            PDouble(FPLainDriver.dbRetData(FHandle, ParamIndex))^);
+        tdsNumeric,
+        tdsDecimal,
+        tdsMoney,
+        tdsMoney4:
+          begin
+            FPlainDriver.dbConvert(FHandle, RetType,
+              FPlainDriver.dbRetData(FHandle, ParamIndex),
+                FPLainDriver.dbRetLen(FHandle, ParamIndex), Ord(tdsFlt8),
+              @DatDouble, 8);
+            SoftVarManager.SetAsFloat(Temp, DatDouble);
+          end;
+        tdsDateTime4, tdsDateTimeN:
+          begin
+            FPLainDriver.dbConvert(FHandle, RetType,
+              FPLainDriver.dbRetData(FHandle, ParamIndex), 4,
+              RetType, @DatDBDATETIME, 8);
+            SoftVarManager.SetAsDateTime(Temp,
+              DatDBDATETIME.dtdays + 2 + (DatDBDATETIME.dttime / 25920000));
+          end;
+        tdsDateTime:
+          begin
+            DatDBDATETIME := PDBDATETIME(
+              FPLainDriver.dbRetData(FHandle, ParamIndex))^;
+            SoftVarManager.SetAsDateTime(Temp,
+              DatDBDATETIME.dtdays + 2 + (DatDBDATETIME.dttime / 25920000));
+          end;
+        tdsImage:
+          Temp := EncodeInterface(TZAbstractBlob.CreateWithData(
+            FPlainDriver.dbRetData(FHandle, ParamIndex),
+            FPLainDriver.dbRetLen(FHandle, ParamIndex)));
+        tdsText:
+          Temp := EncodeInterface(TZAbstractClob.CreateWithData(
+            FPlainDriver.dbRetData(FHandle, ParamIndex),
+            FPLainDriver.dbRetLen(FHandle, ParamIndex),
+            ConSettings^.ClientCodePage^.CP, ConSettings));
+        tdsNText:
+          Temp := EncodeInterface(TZAbstractClob.CreateWithData(
+            FPlainDriver.dbRetData(FHandle, ParamIndex),
+            FPLainDriver.dbRetLen(FHandle, ParamIndex),
+            zCP_UTF8, ConSettings));
+        tdsBit:
+          Temp := EncodeBoolean(PBoolean(FPlainDriver.dbRetData(FHandle, ParamIndex))^);
+        else
+          {
+          tdsFltN,
+          tdsFltN,
+          tdsMoneyN:
+          tdsUnique:
+          tdsIntN:
+          tdsVariant:
+          tdsBitN:
+          tdsUDT:
+          tdsMSXML:}
+          Temp := NullVariant;
+
+      end;
     OutParamValues[I] := Temp;
     Inc(ParamIndex);
   end;
@@ -915,11 +1003,10 @@ begin
 //after reading the output parameters
   FetchRowCount;
 
-  DriverManager.LogMessage(lcExecute, FPlainDriver.GetProtocol,
-    Format('EXEC %s', [SQL]));
+  DriverManager.LogMessage(lcExecute, ConSettings^.Protocol, 'EXEC '+ ASQL);
 end;
 
-procedure TZDBLibCallableStatement.SetInParamCount(NewParamCount: Integer);
+procedure TZDBLibCallableStatement.SetInParamCount(const NewParamCount: Integer);
 begin
   inherited SetInParamCount(NewParamCount);
 

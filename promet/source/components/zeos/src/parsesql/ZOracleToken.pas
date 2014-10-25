@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -92,8 +90,8 @@ type
 
   {** Implements a default tokenizer object. }
   TZOracleTokenizer = class (TZTokenizer)
-  public
-    constructor Create;
+  protected
+    procedure CreateTokenStates; override;
   end;
 
 implementation
@@ -133,13 +131,11 @@ end;
 { TZOracleTokenizer }
 
 {**
-  Constructs a tokenizer with a default state table (as
-  described in the class comment).
+  Constructs a default state table (as described in the class comment).
 }
-constructor TZOracleTokenizer.Create;
+procedure TZOracleTokenizer.CreateTokenStates;
 begin
   EscapeState := TZEscapeState.Create;
-  EscapeMarkSequence := '~<|'; //Defaults
   WhitespaceState := TZWhitespaceState.Create;
 
   SymbolState := TZOracleSymbolState.Create;
@@ -148,8 +144,9 @@ begin
   WordState := TZOracleWordState.Create;
   CommentState := TZOracleCommentState.Create;
 
-  SetCharacterState(#0, #255, SymbolState);
-  SetCharacterState(#0, ' ', WhitespaceState);
+  SetCharacterState(#0, #32, WhitespaceState);
+  SetCharacterState(#33, #191, SymbolState);
+  SetCharacterState(#192, High(Char), WordState);
 
   SetCharacterState('a', 'z', WordState);
   SetCharacterState('A', 'Z', WordState);

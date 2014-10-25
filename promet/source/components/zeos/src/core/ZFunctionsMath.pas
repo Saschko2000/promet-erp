@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,7 +56,7 @@ interface
 {$I ZCore.inc}
 
 uses
-  SysUtils, ZClasses, ZFunctions, ZExpression, ZVariant;
+  SysUtils, ZFunctions, ZExpression, ZVariant, ZFastCode;
 
 {**  Math functions }
 
@@ -219,6 +217,10 @@ implementation
 
 uses
   Math;
+
+{$IFDEF FPC}
+  {$HINTS OFF}
+{$ENDIF}
 
 { TZEFunction }
 
@@ -507,7 +509,7 @@ function TZTruncFunction.Execute(Stack: TZExecutionStack;
   VariantManager: IZVariantManager): TZVariant;
 begin
   CheckParamsCount(Stack, 1);
-  VariantManager.SetAsInteger(Result, Trunc(VariantManager.GetAsFloat(Stack.GetParameter(1))));
+  VariantManager.SetAsInteger(Result, {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc(VariantManager.GetAsFloat(Stack.GetParameter(1))));
 end;
 
 { TZIntFunction }
@@ -583,3 +585,4 @@ begin
 end;
 
 end.
+

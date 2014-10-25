@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -61,19 +59,21 @@ uses
 {$IFDEF MSWINDOWS}
   Windows,
 {$ENDIF}
-  Types, Classes, SysUtils, Contnrs, ZDbcIntfs, ZClasses, ZCollections, ZSysUtils,
 {$IFDEF FPC}
   {$IFDEF WIN32}
     Comobj,
   {$ENDIF}
 {$ENDIF}
-  ZCompatibility, ZVariant;
+  Types, Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils, Contnrs,
+  ZDbcIntfs, ZClasses, ZCollections, ZSysUtils, ZCompatibility, ZVariant;
 
+{$IFDEF FPC}
+  {$HINTS OFF} //suppress not used params
+{$ENDIF}
 type
   {** Implements Abstract ResultSet. }
   TZAbstractResultSet = class(TZCodePagedObject, IZResultSet)
   private
-    FTemp: String;
     FRowNo: Integer;
     FLastRowNo: Integer;
     FMaxRows: Integer;
@@ -88,9 +88,11 @@ type
     FMetadata: TContainedObject;
     FStatement: IZStatement;
   protected
+    FRawTemp: RawByteString;
+    FUniTemp: ZWideString;
     LastWasNull: Boolean;
 
-    function InternalGetString(ColumnIndex: Integer): AnsiString; virtual;
+    function InternalGetString(ColumnIndex: Integer): RawByteString; virtual;
 
     procedure RaiseUnsupportedException;
     procedure RaiseForwardOnlyException;
@@ -116,7 +118,7 @@ type
 
   public
     constructor Create(Statement: IZStatement; SQL: string;
-      Metadata: TContainedObject; ClientCodePage: PZCodePage);
+      Metadata: TContainedObject; ConSettings: PZConSettings);
     destructor Destroy; override;
 
     procedure SetType(Value: TZResultSetType);
@@ -132,20 +134,30 @@ type
 
     function IsNull(ColumnIndex: Integer): Boolean; virtual;
     function GetPChar(ColumnIndex: Integer): PChar; virtual;
+    function GetPAnsiChar(ColumnIndex: Integer): PAnsiChar; overload; virtual;
+    function GetPAnsiChar(ColumnIndex: Integer; out Len: NativeUInt): PAnsiChar; overload; virtual;
+    function GetPWideChar(ColumnIndex: Integer): PWidechar; overload; virtual;
+    function GetPWideChar(ColumnIndex: Integer; out Len: NativeUInt): PWideChar; overload; virtual;
     function GetString(ColumnIndex: Integer): String; virtual;
-    {$IFDEF DELPHI12_UP}
-    function GetAnsiString(ColumnIndex: Integer): AnsiString;
-    {$ENDIF}
-    function GetUnicodeString(ColumnIndex: Integer): WideString; virtual;
+    function GetAnsiString(ColumnIndex: Integer): AnsiString; virtual;
+    function GetUTF8String(ColumnIndex: Integer): UTF8String; virtual;
+    function GetRawByteString(ColumnIndex: Integer): RawByteString; virtual;
+    function GetBinaryString(ColumnIndex: Integer): RawByteString;
+    function GetUnicodeString(ColumnIndex: Integer): ZWideString; virtual;
     function GetBoolean(ColumnIndex: Integer): Boolean; virtual;
-    function GetByte(ColumnIndex: Integer): ShortInt; virtual;
-    function GetShort(ColumnIndex: Integer): SmallInt; virtual;
+    function GetByte(ColumnIndex: Integer): Byte; virtual;
+    function GetShort(ColumnIndex: Integer): ShortInt; virtual;
+    function GetWord(ColumnIndex: Integer): Word; virtual;
+    function GetSmall(ColumnIndex: Integer): SmallInt; virtual;
+    function GetUInt(ColumnIndex: Integer): Cardinal; virtual;
     function GetInt(ColumnIndex: Integer): Integer; virtual;
+    function GetULong(ColumnIndex: Integer): UInt64; virtual;
     function GetLong(ColumnIndex: Integer): Int64; virtual;
     function GetFloat(ColumnIndex: Integer): Single; virtual;
     function GetDouble(ColumnIndex: Integer): Double; virtual;
+    function GetCurrency(ColumnIndex: Integer): Currency; virtual;
     function GetBigDecimal(ColumnIndex: Integer): Extended; virtual;
-    function GetBytes(ColumnIndex: Integer): TByteDynArray; virtual;
+    function GetBytes(ColumnIndex: Integer): TBytes; virtual;
     function GetDate(ColumnIndex: Integer): TDateTime; virtual;
     function GetTime(ColumnIndex: Integer): TDateTime; virtual;
     function GetTimestamp(ColumnIndex: Integer): TDateTime; virtual;
@@ -153,6 +165,7 @@ type
     function GetUnicodeStream(ColumnIndex: Integer): TStream; virtual;
     function GetBinaryStream(ColumnIndex: Integer): TStream; virtual;
     function GetBlob(ColumnIndex: Integer): IZBlob; virtual;
+    function GetDataSet(ColumnIndex: Integer): IZDataSet; virtual;
     function GetValue(ColumnIndex: Integer): TZVariant; virtual;
     function GetDefaultExpression(ColumnIndex: Integer): String; virtual;
 
@@ -162,20 +175,30 @@ type
 
     function IsNullByName(const ColumnName: string): Boolean; virtual;
     function GetPCharByName(const ColumnName: string): PChar; virtual;
+    function GetPAnsiCharByName(const ColumnName: string): PAnsiChar; overload; virtual;
+    function GetPAnsiCharByName(const ColumnName: string; out Len: NativeUInt): PAnsiChar; overload; virtual;
+    function GetPWideCharByName(const ColumnName: string): PWidechar; overload; virtual;
+    function GetPWideCharByName(const ColumnName: string; out Len: NativeUInt): PWideChar; overload; virtual;
     function GetStringByName(const ColumnName: string): String; virtual;
-    {$IFDEF DELPHI12_UP}
-    function GetAnsiStringByName(const ColumnName: string): AnsiString;
-    {$ENDIF}
-    function GetUnicodeStringByName(const ColumnName: string): WideString; virtual;
+    function GetAnsiStringByName(const ColumnName: string): AnsiString; virtual;
+    function GetUTF8StringByName(const ColumnName: string): UTF8String; virtual;
+    function GetRawByteStringByName(const ColumnName: string): RawByteString; virtual;
+    function GetBinaryStringByName(const ColumnName: string): RawByteString;
+    function GetUnicodeStringByName(const ColumnName: string): ZWideString; virtual;
     function GetBooleanByName(const ColumnName: string): Boolean; virtual;
-    function GetByteByName(const ColumnName: string): ShortInt; virtual;
-    function GetShortByName(const ColumnName: string): SmallInt; virtual;
+    function GetByteByName(const ColumnName: string): Byte; virtual;
+    function GetShortByName(const ColumnName: string): ShortInt; virtual;
+    function GetWordByName(const ColumnName: string): Word; virtual;
+    function GetSmallByName(const ColumnName: string): SmallInt; virtual;
+    function GetUIntByName(const ColumnName: string): Cardinal; virtual;
     function GetIntByName(const ColumnName: string): Integer; virtual;
+    function GetULongByName(const ColumnName: string): UInt64; virtual;
     function GetLongByName(const ColumnName: string): Int64; virtual;
     function GetFloatByName(const ColumnName: string): Single; virtual;
     function GetDoubleByName(const ColumnName: string): Double; virtual;
+    function GetCurrencyByName(const ColumnName: string): Currency; virtual;
     function GetBigDecimalByName(const ColumnName: string): Extended; virtual;
-    function GetBytesByName(const ColumnName: string): TByteDynArray; virtual;
+    function GetBytesByName(const ColumnName: string): TBytes; virtual;
     function GetDateByName(const ColumnName: string): TDateTime; virtual;
     function GetTimeByName(const ColumnName: string): TDateTime; virtual;
     function GetTimestampByName(const ColumnName: string): TDateTime; virtual;
@@ -183,6 +206,7 @@ type
     function GetUnicodeStreamByName(const ColumnName: string): TStream; virtual;
     function GetBinaryStreamByName(const ColumnName: string): TStream; virtual;
     function GetBlobByName(const ColumnName: string): IZBlob; virtual;
+    function GetDataSetByName(const ColumnName: String): IZDataSet; virtual;
     function GetValueByName(const ColumnName: string): TZVariant; virtual;
 
     //=====================================================================
@@ -208,7 +232,7 @@ type
     procedure AfterLast; virtual;
     function First: Boolean; virtual;
     function Last: Boolean; virtual;
-    function GetRow: Integer; virtual;
+    function GetRow: NativeInt; virtual;
     function MoveAbsolute(Row: Integer): Boolean; virtual;
     function MoveRelative(Rows: Integer): Boolean; virtual;
     function Previous: Boolean; virtual;
@@ -238,27 +262,39 @@ type
     function RowDeleted: Boolean; virtual;
 
     procedure UpdateNull(ColumnIndex: Integer); virtual;
-    procedure UpdateBoolean(ColumnIndex: Integer; Value: Boolean); virtual;
-    procedure UpdateByte(ColumnIndex: Integer; Value: ShortInt); virtual;
-    procedure UpdateShort(ColumnIndex: Integer; Value: SmallInt); virtual;
-    procedure UpdateInt(ColumnIndex: Integer; Value: Integer); virtual;
-    procedure UpdateLong(ColumnIndex: Integer; Value: Int64); virtual;
-    procedure UpdateFloat(ColumnIndex: Integer; Value: Single); virtual;
-    procedure UpdateDouble(ColumnIndex: Integer; Value: Double); virtual;
-    procedure UpdateBigDecimal(ColumnIndex: Integer; Value: Extended); virtual;
-    procedure UpdatePChar(ColumnIndex: Integer; Value: PChar); virtual;
+    procedure UpdateBoolean(ColumnIndex: Integer; const Value: Boolean); virtual;
+    procedure UpdateByte(ColumnIndex: Integer; const Value: Byte); virtual;
+    procedure UpdateShort(ColumnIndex: Integer; const Value: ShortInt); virtual;
+    procedure UpdateWord(ColumnIndex: Integer; const Value: Word); virtual;
+    procedure UpdateSmall(ColumnIndex: Integer; const Value: SmallInt); virtual;
+    procedure UpdateUInt(ColumnIndex: Integer; const Value: Cardinal); virtual;
+    procedure UpdateInt(ColumnIndex: Integer; const Value: Integer); virtual;
+    procedure UpdateULong(ColumnIndex: Integer; const Value: UInt64); virtual;
+    procedure UpdateLong(ColumnIndex: Integer; const Value: Int64); virtual;
+    procedure UpdateFloat(ColumnIndex: Integer; const Value: Single); virtual;
+    procedure UpdateDouble(ColumnIndex: Integer; const Value: Double); virtual;
+    procedure UpdateCurrency(ColumnIndex: Integer; const Value: Currency); virtual;
+    procedure UpdateBigDecimal(ColumnIndex: Integer; const Value: Extended); virtual;
+    procedure UpdatePChar(ColumnIndex: Integer; const Value: PChar); virtual;
+    procedure UpdatePAnsiChar(ColumnIndex: Integer; Value: PAnsiChar); overload; virtual;
+    procedure UpdatePAnsiChar(ColumnIndex: Integer; Value: PAnsiChar; Len: PNativeUInt); overload; virtual;
+    procedure UpdatePWideChar(ColumnIndex: Integer; Value: PWideChar); overload; virtual;
+    procedure UpdatePWideChar(ColumnIndex: Integer; Value: PWideChar; Len: PNativeUInt); overload; virtual;
     procedure UpdateString(ColumnIndex: Integer; const Value: String); virtual;
-    {$IFDEF DELPHI12_UP}
-    procedure UpdateAnsiString(ColumnIndex: Integer; const Value: AnsiString);
-    {$ENDIF}
-    procedure UpdateUnicodeString(ColumnIndex: Integer; const Value: WideString); virtual;
-    procedure UpdateBytes(ColumnIndex: Integer; const Value: TByteDynArray); virtual;
-    procedure UpdateDate(ColumnIndex: Integer; Value: TDateTime); virtual;
-    procedure UpdateTime(ColumnIndex: Integer; Value: TDateTime); virtual;
-    procedure UpdateTimestamp(ColumnIndex: Integer; Value: TDateTime); virtual;
-    procedure UpdateAsciiStream(ColumnIndex: Integer; Value: TStream); virtual;
-    procedure UpdateUnicodeStream(ColumnIndex: Integer; Value: TStream); virtual;
-    procedure UpdateBinaryStream(ColumnIndex: Integer; Value: TStream); virtual;
+    procedure UpdateAnsiString(ColumnIndex: Integer; const Value: AnsiString); virtual;
+    procedure UpdateUTF8String(ColumnIndex: Integer; const Value: UTF8String); virtual;
+    procedure UpdateRawByteString(ColumnIndex: Integer; const Value: RawByteString); virtual;
+    procedure UpdateBinaryString(ColumnIndex: Integer; const Value: RawByteString);
+    procedure UpdateUnicodeString(ColumnIndex: Integer; const Value: ZWideString); virtual;
+    procedure UpdateBytes(ColumnIndex: Integer; const Value: TBytes); virtual;
+    procedure UpdateDate(ColumnIndex: Integer; const Value: TDateTime); virtual;
+    procedure UpdateTime(ColumnIndex: Integer; const Value: TDateTime); virtual;
+    procedure UpdateTimestamp(ColumnIndex: Integer; const Value: TDateTime); virtual;
+    procedure UpdateAsciiStream(ColumnIndex: Integer; const Value: TStream); virtual;
+    procedure UpdateUnicodeStream(ColumnIndex: Integer; const Value: TStream); virtual;
+    procedure UpdateBinaryStream(ColumnIndex: Integer; const Value: TStream); virtual;
+    procedure UpdateLob(ColumnIndex: Integer; const Value: IZBlob); virtual;
+    procedure UpdateDataSet(ColumnIndex: Integer; const Value: IZDataSet); virtual;
     procedure UpdateValue(ColumnIndex: Integer; const Value: TZVariant); virtual;
     procedure UpdateDefaultExpression(ColumnIndex: Integer; const Value: string); virtual;
 
@@ -267,27 +303,38 @@ type
     //======================================================================
 
     procedure UpdateNullByName(const ColumnName: string); virtual;
-    procedure UpdateBooleanByName(const ColumnName: string; Value: Boolean); virtual;
-    procedure UpdateByteByName(const ColumnName: string; Value: ShortInt); virtual;
-    procedure UpdateShortByName(const ColumnName: string; Value: SmallInt); virtual;
-    procedure UpdateIntByName(const ColumnName: string; Value: Integer); virtual;
-    procedure UpdateLongByName(const ColumnName: string; Value: Int64); virtual;
-    procedure UpdateFloatByName(const ColumnName: string; Value: Single); virtual;
-    procedure UpdateDoubleByName(const ColumnName: string; Value: Double); virtual;
-    procedure UpdateBigDecimalByName(const ColumnName: string; Value: Extended); virtual;
-    procedure UpdatePCharByName(const ColumnName: string; Value: PChar); virtual;
+    procedure UpdateBooleanByName(const ColumnName: string; const Value: Boolean); virtual;
+    procedure UpdateByteByName(const ColumnName: string; const Value: Byte); virtual;
+    procedure UpdateShortByName(const ColumnName: string; const Value: ShortInt); virtual;
+    procedure UpdateWordByName(const ColumnName: string; const Value: Word); virtual;
+    procedure UpdateSmallByName(const ColumnName: string; const Value: SmallInt); virtual;
+    procedure UpdateUIntByName(const ColumnName: string; const Value: Cardinal); virtual;
+    procedure UpdateIntByName(const ColumnName: string; const Value: Integer); virtual;
+    procedure UpdateULongByName(const ColumnName: string; const Value: UInt64); virtual;
+    procedure UpdateLongByName(const ColumnName: string; const Value: Int64); virtual;
+    procedure UpdateFloatByName(const ColumnName: string; const Value: Single); virtual;
+    procedure UpdateDoubleByName(const ColumnName: string; const Value: Double); virtual;
+    procedure UpdateCurrencyByName(const ColumnName: string; const Value: Currency); virtual;
+    procedure UpdateBigDecimalByName(const ColumnName: string; const Value: Extended); virtual;
+    procedure UpdatePAnsiCharByName(const ColumnName: string; Value: PAnsiChar); overload; virtual;
+    procedure UpdatePAnsiCharByName(const ColumnName: string; Value: PAnsiChar; Len: PNativeUInt); overload; virtual;
+    procedure UpdatePCharByName(const ColumnName: string; const Value: PChar); virtual;
+    procedure UpdatePWideCharByName(const ColumnName: string; Value: PWideChar); overload; virtual;
+    procedure UpdatePWideCharByName(const ColumnName: string; Value: PWideChar; Len: PNativeUInt); overload; virtual;
     procedure UpdateStringByName(const ColumnName: string; const Value: String); virtual;
-    {$IFDEF DELPHI12_UP}
-    procedure UpdateAnsiStringByName(const ColumnName: string; const Value: AnsiString);
-    {$ENDIF}
-    procedure UpdateUnicodeStringByName(const ColumnName: string; const Value: WideString); virtual;
-    procedure UpdateBytesByName(const ColumnName: string; const Value: TByteDynArray); virtual;
-    procedure UpdateDateByName(const ColumnName: string; Value: TDateTime); virtual;
-    procedure UpdateTimeByName(const ColumnName: string; Value: TDateTime); virtual;
-    procedure UpdateTimestampByName(const ColumnName: string; Value: TDateTime); virtual;
-    procedure UpdateAsciiStreamByName(const ColumnName: string; Value: TStream); virtual;
-    procedure UpdateUnicodeStreamByName(const ColumnName: string; Value: TStream); virtual;
-    procedure UpdateBinaryStreamByName(const ColumnName: string; Value: TStream); virtual;
+    procedure UpdateAnsiStringByName(const ColumnName: string; const Value: AnsiString); virtual;
+    procedure UpdateUTF8StringByName(const ColumnName: string; const Value: UTF8String); virtual;
+    procedure UpdateRawByteStringByName(const ColumnName: string; const Value: RawByteString); virtual;
+    procedure UpdateBinaryStringByName(const ColumnName: string; const Value: RawByteString);
+    procedure UpdateUnicodeStringByName(const ColumnName: string; const Value: ZWideString); virtual;
+    procedure UpdateBytesByName(const ColumnName: string; const Value: TBytes); virtual;
+    procedure UpdateDateByName(const ColumnName: string; const Value: TDateTime); virtual;
+    procedure UpdateTimeByName(const ColumnName: string; const Value: TDateTime); virtual;
+    procedure UpdateTimestampByName(const ColumnName: string; const Value: TDateTime); virtual;
+    procedure UpdateAsciiStreamByName(const ColumnName: string; const Value: TStream); virtual;
+    procedure UpdateUnicodeStreamByName(const ColumnName: string; const Value: TStream); virtual;
+    procedure UpdateBinaryStreamByName(const ColumnName: string; const Value: TStream); virtual;
+    procedure UpdateDataSetByName(const ColumnName: string; const Value: IZDataSet); virtual;
     procedure UpdateValueByName(const ColumnName: string; const Value: TZVariant); virtual;
 
     procedure InsertRow; virtual;
@@ -298,53 +345,291 @@ type
     procedure MoveToInsertRow; virtual;
     procedure MoveToCurrentRow; virtual;
 
-    function CompareRows(Row1, Row2: Integer; const ColumnIndices: TIntegerDynArray;
-      const ColumnDirs: TBooleanDynArray): Integer; virtual;
+    function CompareRows(Row1, Row2: NativeInt; const ColumnIndices: TIntegerDynArray;
+      const CompareFuncs: TCompareFuncs): Integer; virtual;
+    function GetCompareFuncs(const ColumnIndices: TIntegerDynArray;
+      const CompareKinds: TComparisonKindArray): TCompareFuncs; virtual;
 
     function GetStatement: IZStatement; virtual;
 
-    function GetClientCodePage: PZCodePage;
+    function GetConSettings: PZConsettings;
     property ColumnsInfo: TObjectList read FColumnsInfo write FColumnsInfo;
   end;
+
+  {** implents a optimal Converter function for Date, Time, DateTime conversion }
+  TDateTimeConverter = function (Value, Format: PAnsiChar;
+    Const ValLen, FormatLen: Cardinal; var OptConFunc: Pointer): TDateTime;
 
   {** Implements external or internal blob wrapper object. }
   TZAbstractBlob = class(TInterfacedObject, IZBlob)
   private
-    FBlobData: Pointer;
-    FBlobSize: Integer;
-    FUpdated: Boolean;
   protected
+    FBlobData: Pointer;
+    FBlobSize: Integer; //All Mem operations except AllocMem(also calls FillChar(P, 0)) use integers. So we can only load MaxInt bytes. More intersting on 64Bit env.
+    FUpdated: Boolean;
+    procedure InternalClear; virtual;
     property BlobData: Pointer read FBlobData write FBlobData;
     property BlobSize: Integer read FBlobSize write FBlobSize;
     property Updated: Boolean read FUpdated write FUpdated;
   public
-    constructor CreateWithStream(Stream: TStream);
-    constructor CreateWithData(Data: Pointer; Size: Integer);
+    constructor CreateWithStream(Stream: TStream); virtual;
+    constructor CreateWithData(Data: Pointer; Size: Integer); virtual;
     destructor Destroy; override;
 
     function IsEmpty: Boolean; virtual;
     function IsUpdated: Boolean; virtual;
-    function Length: LongInt; virtual;
+    function Length: Integer; virtual;
 
-    function GetString: ZAnsiString; virtual;
-    procedure SetString(const Value: ZAnsiString); virtual;
-    function GetUnicodeString: WideString; virtual;
-    procedure SetUnicodeString(const Value: WideString); virtual;
-    function GetBytes: TByteDynArray; virtual;
-    procedure SetBytes(const Value: TByteDynArray); virtual;
-    function GetUnicodeStream: TStream; virtual;
+    function GetString: RawByteString; virtual;
+    procedure SetString(const Value: RawByteString); virtual;
+    function GetBytes: TBytes; virtual;
+    procedure SetBytes(const Value: TBytes); virtual;
     function GetStream: TStream; virtual;
-    procedure SetStream(Value: TStream); virtual;
-    function GetBuffer: Pointer;
-    procedure SetBuffer(Buffer: Pointer; Length: Integer);
+    procedure SetStream(const Value: TStream); overload; virtual;
+    function GetBuffer: Pointer; virtual;
+    procedure SetBuffer(const Buffer: Pointer; const Length: Integer);
+    {$IFDEF WITH_MM_CAN_REALLOC_EXTERNAL_MEM}
+    procedure SetBlobData(const Buffer: Pointer; const Len: Cardinal); overload;
+    {$ENDIF}
 
     procedure Clear; virtual;
-    function Clone: IZBlob; virtual;
+    function Clone(Empty: Boolean = False): IZBlob; virtual;
+    function IsClob: Boolean; virtual;
+
+    {clob operations}
+    function GetRawByteString: RawByteString; virtual;
+    procedure SetRawByteString(Const Value: RawByteString; const CodePage: Word); virtual;
+    function GetAnsiString: AnsiString; virtual;
+    procedure SetAnsiString(Const Value: AnsiString); virtual;
+    function GetUTF8String: UTF8String; virtual;
+    procedure SetUTF8String(Const Value: UTF8String); virtual;
+    procedure SetUnicodeString(const Value: ZWideString); virtual;
+    function GetUnicodeString: ZWideString; virtual;
+    procedure SetStream(const Value: TStream; const CodePage: Word); overload; virtual;
+    function GetRawByteStream: TStream; virtual;
+    function GetAnsiStream: TStream; virtual;
+    function GetUTF8Stream: TStream; virtual;
+    function GetUnicodeStream: TStream; virtual;
+    function GetPAnsiChar(const CodePage: Word): PAnsiChar; virtual;
+    procedure SetPAnsiChar(const Buffer: PAnsiChar; const CodePage: Word; const Len: Cardinal); virtual;
+    function GetPWideChar: PWideChar; virtual;
+    procedure SetPWideChar(const Buffer: PWideChar; const Len: Cardinal); virtual;
+    {$IFDEF WITH_MM_CAN_REALLOC_EXTERNAL_MEM}
+    procedure SetBlobData(const Buffer: Pointer; const Len: Cardinal; const CodePage: Word); overload; virtual;
+    {$ENDIF}
   end;
+
+  TZAbstractUnCachedBlob = class(TZAbstractBlob)
+  private
+    FLoaded: Boolean;
+  protected
+    procedure ReadLob; virtual;
+    procedure WriteLob; virtual;
+    property Loaded: Boolean read FLoaded;
+  public
+    function IsEmpty: Boolean; override;
+    function Length: Integer; override;
+    function GetString: RawByteString; override;
+    function GetBytes: TBytes; override;
+    function GetStream: TStream; override;
+    function GetBuffer: Pointer; override;
+  end;
+
+  {** Implements external or internal clob wrapper object. }
+  TZAbstractCLob = class(TZAbstractBlob)
+  private
+    FCurrentCodePage: Word;
+  protected
+    FConSettings: PZConSettings;
+    procedure InternalSetRawByteString(Const Value: RawByteString; const CodePage: Word);
+    procedure InternalSetAnsiString(Const Value: AnsiString);
+    procedure InternalSetUTF8String(Const Value: UTF8String);
+    procedure InternalSetUnicodeString(const Value: ZWideString);
+    procedure InternalSetPAnsiChar(const Buffer: PAnsiChar; CodePage: Word; const Len: Cardinal);
+    procedure InternalSetPWideChar(const Buffer: PWideChar; const Len: Cardinal);
+    property Updated: Boolean read FUpdated write FUpdated;
+    property CurrentCodePage: Word read FCurrentCodePage;
+  public
+    constructor CreateWithStream(Stream: TStream; const CodePage: Word;
+      const ConSettings: PZConSettings); reintroduce;
+    constructor CreateWithData(Data: PAnsiChar; const Len: Cardinal;
+      const CodePage: Word; const ConSettings: PZConSettings); reintroduce; overload;
+    constructor CreateWithData(Data: PWideChar; const Len: Cardinal;
+      const ConSettings: PZConSettings); reintroduce; overload;
+
+    function Length: Integer; override;
+    function GetString: RawByteString; override; //deprected;
+    function GetRawByteString: RawByteString; override;
+    procedure SetRawByteString(Const Value: RawByteString; const CodePage: Word); override;
+    function GetAnsiString: AnsiString; override;
+    procedure SetAnsiString(Const Value: AnsiString); override;
+    function GetUTF8String: UTF8String; override;
+    procedure SetUTF8String(Const Value: UTF8String); override;
+    function GetUnicodeString: ZWideString; override;
+    procedure SetUnicodeString(const Value: ZWideString); override;
+    function GetStream: TStream; override;
+    procedure SetStream(const Value: TStream); overload; override;
+    procedure SetStream(const Value: TStream; const CodePage: Word); reintroduce; overload; override;
+    function GetRawByteStream: TStream; override;
+    function GetAnsiStream: TStream; override;
+    function GetUTF8Stream: TStream; override;
+    function GetUnicodeStream: TStream; override;
+    function GetPAnsiChar(const CodePage: Word): PAnsiChar; override;
+    procedure SetPAnsiChar(const Buffer: PAnsiChar; const CodePage: Word; const Len: Cardinal); override;
+    function GetPWideChar: PWideChar; override;
+    procedure SetPWideChar(const Buffer: PWideChar; const Len: Cardinal); override;
+    {$IFDEF WITH_MM_CAN_REALLOC_EXTERNAL_MEM}
+    procedure SetBlobData(const Buffer: Pointer; const Len: Cardinal; const CodePage: Word); override;
+    {$ENDIF}
+
+    function Clone(Empty: Boolean = False): IZBLob; override;
+    function IsClob: Boolean; override;
+  end;
+
+  TZAbstractUnCachedCLob = Class(TZAbstractCLob)
+  private
+    FLoaded: Boolean;
+  protected
+    property Loaded: Boolean read FLoaded;
+    procedure ReadLob; virtual;
+    procedure WriteLob; virtual;
+  public
+    function Length: Integer; override;
+    function IsEmpty: Boolean; override;
+    function GetRawByteString: RawByteString; override;
+    function GetAnsiString: AnsiString; override;
+    function GetUTF8String: UTF8String; override;
+    function GetUnicodeString: ZWideString; override;
+    function GetStream: TStream; override;
+    function GetRawByteStream: TStream; override;
+    function GetAnsiStream: TStream; override;
+    function GetUTF8Stream: TStream; override;
+    function GetUnicodeStream: TStream; override;
+    function GetPAnsiChar(const CodePage: Word): PAnsiChar; override;
+    function GetPWideChar: PWideChar; override;
+    function GetBuffer: Pointer; override;
+    function Clone(Empty: Boolean = False): IZBLob; override;
+  End;
 
 implementation
 
-uses ZMessages, ZDbcUtils, ZDbcResultSetMetadata;
+uses Math, ZMessages, ZDbcUtils, ZDbcResultSetMetadata, ZEncoding, ZFastCode
+  {$IFDEF WITH_UNITANSISTRINGS}, AnsiStrings{$ENDIF};
+
+function CompareNothing(const Null1, Null2: Boolean; const V1, V2): Integer; //emergency exit for complex types we can't sort quickly like arrays, dataset ...
+begin
+  Result := 0;
+end;
+
+function CompareBoolean_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1
+  else Result := Ord(TZVariant(V1).VBoolean)-Ord(TZVariant(V2).VBoolean);
+end;
+
+function CompareBoolean_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareBoolean_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareInt64_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 0
+  else Result := Ord(TZVariant(V1).VInteger > TZVariant(V2).VInteger)-Ord(TZVariant(V1).VInteger < TZVariant(V2).VInteger);
+end;
+
+function CompareInt64_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareInt64_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareUInt64_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1
+  else Result := Ord(TZVariant(V1).VUInteger > TZVariant(V2).VUInteger)-Ord(TZVariant(V1).VUInteger < TZVariant(V2).VUInteger);
+end;
+
+function CompareUInt64_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareUInt64_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareFloat_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1
+  else Result := Ord(TZVariant(V1).VFloat > TZVariant(V2).VFloat)-Ord(TZVariant(V1).VFloat < TZVariant(V2).VFloat);
+end;
+
+function CompareFloat_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareFloat_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareDateTime_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1
+  else Result := Ord(TZVariant(V1).VDateTime > TZVariant(V2).VDateTime)-Ord(TZVariant(V1).VDateTime < TZVariant(V2).VDateTime);
+end;
+
+function CompareDateTime_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareDateTime_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareBytes_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1 else
+  begin
+    Result := Length(TZVariant(V1).VBytes) - Length(TZVariant(V2).VBytes); //overflow save!
+    if Result = 0 then
+      Result := ZMemLComp(Pointer(TZVariant(V1).VBytes), Pointer(TZVariant(V2).VBytes),
+        Length(TZVariant(V1).VBytes));
+  end;
+end;
+
+function CompareBytes_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareBytes_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareRawByteString_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1
+  else Result := {$IFDEF WITH_ANSISTRCOMP_DEPRECATED}AnsiStrings.{$ENDIF}
+    AnsiStrComp(PAnsiChar(TZVariant(V1).VRawByteString), PAnsiChar(TZVariant(V2).VRawByteString));
+end;
+
+function CompareRawByteString_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareRawByteString_Asc(Null1, Null2, V1, V2);
+end;
+
+function CompareUnicodeString_Asc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  if Null1 and Null2 then Result := 0
+  else if Null1 then Result := -1
+  else if Null2 then Result := 1
+  else Result := WideCompareStr(TZVariant(V1).VUnicodeString, TZVariant(V2).VUnicodeString);
+end;
+
+function CompareUnicodeString_Desc(const Null1, Null2: Boolean; const V1, V2): Integer;
+begin
+  Result := -CompareUnicodeString_Asc(Null1, Null2, V1, V2);
+end;
 
 { TZAbstractResultSet }
 
@@ -353,13 +638,14 @@ uses ZMessages, ZDbcUtils, ZDbcResultSetMetadata;
   @param Statement an SQL statement object.
   @param SQL an SQL query string.
   @param Metadata a resultset metadata object.
+  @param ConSettings the pointer to Connection Settings record
 }
 constructor TZAbstractResultSet.Create(Statement: IZStatement; SQL: string;
-  Metadata: TContainedObject; ClientCodePage: PZCodePage);
+  Metadata: TContainedObject; ConSettings: PZConSettings);
 var
   DatabaseMetadata: IZDatabaseMetadata;
 begin
-  Self.ClientCodePage := ClientCodePage;
+  Self.ConSettings := ConSettings;
   LastWasNull := True;
   FRowNo := 0;
   FLastRowNo := 0;
@@ -416,7 +702,7 @@ begin
   inherited Destroy;
 end;
 
-function TZAbstractResultSet.InternalGetString(ColumnIndex: Integer): AnsiString;
+function TZAbstractResultSet.InternalGetString(ColumnIndex: Integer): RawByteString;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckColumnConvertion(ColumnIndex, stString);
@@ -470,19 +756,15 @@ var
 begin
   CheckClosed;
   Metadata := TZAbstractResultSetMetadata(FMetadata);
-  if (Metadata = nil) or (ColumnIndex <= 0)
-    or (ColumnIndex > Metadata.GetColumnCount) then
-  begin
+  if (Metadata = nil) or (ColumnIndex < FirstDbcIndex) or
+     (ColumnIndex > Metadata.GetColumnCount{$IFDEF GENERIC_INDEX}-1{$ENDIF}) then
     raise EZSQLException.Create(
       Format(SColumnIsNotAccessable, [ColumnIndex]));
-  end;
 
   InitialType := Metadata.GetColumnType(ColumnIndex);
   if not CheckConvertion(InitialType, ResultType) then
-  begin
-      raise EZSQLException.Create(Format(SConvertionIsNotPossible, [ColumnIndex,
-         DefineColumnTypeName(InitialType), DefineColumnTypeName(ResultType)]));
-  end;
+    raise EZSQLException.Create(Format(SConvertionIsNotPossible, [ColumnIndex,
+       DefineColumnTypeName(InitialType), DefineColumnTypeName(ResultType)]));
 end;
 
 {**
@@ -496,20 +778,15 @@ var
 begin
   CheckClosed;
   Metadata := TZAbstractResultSetMetadata(FMetadata);
-  if (Metadata = nil) or (ColumnIndex <= 0)
-    or (ColumnIndex > Metadata.GetColumnCount) then
-  begin
+  if (Metadata = nil) or (ColumnIndex < FirstDbcIndex) or
+     (ColumnIndex > Metadata.GetColumnCount{$IFDEF GENERIC_INDEX}-1{$ENDIF}) then
     raise EZSQLException.Create(
       Format(SColumnIsNotAccessable, [ColumnIndex]));
-  end;
 
   InitialType := Metadata.GetColumnType(ColumnIndex);
   if not (InitialType in [stAsciiStream, stBinaryStream, stUnicodeStream]) then
-  begin
-    raise EZSQLException.Create(
-      Format(SCanNotAccessBlobRecord,
+    raise EZSQLException.Create(Format(SCanNotAccessBlobRecord,
       [ColumnIndex, DefineColumnTypeName(InitialType)]));
-  end;
 end;
 
 {**
@@ -571,10 +848,11 @@ begin
   FClosed := True;
   for I := FColumnsInfo.Count - 1 downto 0 do
   begin
-    FColumnInfo:=TZColumnInfo(FColumnsInfo.Extract(FColumnsInfo.Items[I]));
+    FColumnInfo := TZColumnInfo(FColumnsInfo.Extract(FColumnsInfo.Items[I]));
     FColumnInfo.Free;
   end;
   FColumnsInfo.Clear;
+  if (FStatement <> nil) then FStatement.FreeOpenResultSetReference;
   FStatement := nil;
 end;
 
@@ -623,10 +901,92 @@ end;
 
 function TZAbstractResultSet.GetPChar(ColumnIndex: Integer): PChar;
 begin
-  FTemp := GetString(ColumnIndex);
-  Result := PChar(FTemp);
+  {$IFDEF UNICODE}FUniTemp{$ELSE}FRawTemp{$ENDIF} := GetString(ColumnIndex);
+  Result := PChar({$IFDEF UNICODE}FUniTemp{$ELSE}FRawTemp{$ENDIF});
 end;
 
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PAnsiChar</code> in the Delphi programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param Len the Length of the PAnsiChar String
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPAnsiChar(ColumnIndex: Integer; out Len: NativeUInt): PAnsiChar;
+begin
+  FRawTemp := GetRawByteString(ColumnIndex);
+  if Pointer(FRawTemp) = nil then
+  begin
+    Len := 0;
+    Result := PEmptyAnsiString;
+  end
+  else
+  begin
+    Len := NativeUInt({%H-}PLengthInt(NativeUInt(FRawTemp) - StringLenOffSet)^);
+    Result := Pointer(FRawTemp);
+  end;
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PAnsiChar</code> in the Delphi programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPAnsiChar(ColumnIndex: Integer): PAnsiChar;
+begin
+  FRawTemp := GetRawByteString(ColumnIndex);
+  if Pointer(FRawTemp) = nil then
+    Result := PEmptyAnsiString
+  else
+    Result := Pointer(FRawTemp);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PWideChar</code> in the Delphi programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPWideChar(ColumnIndex: Integer): PWidechar;
+begin
+  FUniTemp := GetUnicodeString(ColumnIndex);
+  if Pointer(FUniTemp) = nil then
+    Result := PEmptyUnicodeString
+  else
+    Result := Pointer(FUniTemp);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PWideChar</code> in the Delphi programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param Len the length of UCS2 string in codepoints
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPWideChar(ColumnIndex: Integer;
+  out Len: NativeUInt): PWideChar;
+begin
+  FUniTemp := GetUnicodeString(ColumnIndex);
+  Len := Length(FUniTemp);
+  {no RTL conversion to PWideChar}
+  if Len = 0 then
+    Result := PEmptyUnicodeString
+  else
+    Result := Pointer(FUniTemp);
+end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
@@ -637,8 +997,66 @@ end;
     value returned is <code>null</code>
 }
 function TZAbstractResultSet.GetString(ColumnIndex: Integer): String;
+{$IFDEF UNICODE}
+var
+  Len: NativeUInt;
+  P: PAnsiChar;
+{$ENDIF}
 begin
-  Result := ZDbcString(InternalGetString(ColumnIndex));
+  {$IFDEF UNICODE}
+  P := GetPAnsiChar(ColumnIndex, Len);
+  Result := PRawToUnicode(P, Len, ConSettings^.ClientCodePage^.CP);
+  {$ELSE}
+  Result := ConSettings^.ConvFuncs.ZRawToString(InternalGetString(ColumnIndex),
+    ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP);
+  {$ENDIF}
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>AnsiString</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetAnsiString(ColumnIndex: Integer): AnsiString;
+begin
+  Result := ConSettings^.ConvFuncs.ZRawToAnsi(InternalGetString(ColumnIndex),
+    ConSettings^.ClientCodePage^.CP);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>UTF8String</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetUTF8String(ColumnIndex: Integer): UTF8String;
+var
+  P: PAnsiChar;
+  Len: NativeUInt;
+begin
+  P := GetPAnsiChar(ColumnIndex, Len);
+  Result := ConSettings^.ConvFuncs.ZPRawToUTF8(P, Len, ConSettings^.ClientCodePage^.CP);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>UTF8String</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetRawByteString(ColumnIndex: Integer): RawByteString;
+begin
+  Result := InternalGetString(ColumnIndex);
 end;
 
 {**
@@ -650,12 +1068,11 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-{$IFDEF DELPHI12_UP}
-function TZAbstractResultSet.GetAnsiString(ColumnIndex: Integer): AnsiString;
+function TZAbstractResultSet.GetBinaryString(ColumnIndex: Integer): RawByteString;
 begin
   Result := InternalGetString(ColumnIndex);
 end;
-{$ENDIF}
+
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
@@ -665,15 +1082,13 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-function TZAbstractResultSet.GetUnicodeString(ColumnIndex: Integer): WideString;
+function TZAbstractResultSet.GetUnicodeString(ColumnIndex: Integer): ZWideString;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckColumnConvertion(ColumnIndex, stUnicodeString);
 {$ENDIF}
-  if Self.ClientCodePage^.Encoding in [ceUTF8] then
-    Result := UTF8ToString(InternalGetString(ColumnIndex))
-  else
-    Result := WideString(GetString(ColumnIndex))
+  Result := ConSettings^.ConvFuncs.ZRawToUnicode(InternalGetString(ColumnIndex),
+    ConSettings^.ClientCodePage^.CP);
 end;
 
 {**
@@ -702,12 +1117,12 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>0</code>
 }
-function TZAbstractResultSet.GetByte(ColumnIndex: Integer): ShortInt;
+function TZAbstractResultSet.GetByte(ColumnIndex: Integer): Byte;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckColumnConvertion(ColumnIndex, stByte);
 {$ENDIF}
-  Result := 0;
+  Result := Byte(GetInt(ColumnIndex));
 end;
 
 {**
@@ -719,12 +1134,63 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>0</code>
 }
-function TZAbstractResultSet.GetShort(ColumnIndex: Integer): SmallInt;
+function TZAbstractResultSet.GetShort(ColumnIndex: Integer): ShortInt;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckColumnConvertion(ColumnIndex, stShort);
 {$ENDIF}
-  Result := 0;
+  Result := ShortInt(GetInt(ColumnIndex));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>word</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetWord(ColumnIndex: Integer): Word;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckColumnConvertion(ColumnIndex, stWord);
+{$ENDIF}
+  Result := Word(GetInt(ColumnIndex));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>short</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetSmall(ColumnIndex: Integer): SmallInt;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckColumnConvertion(ColumnIndex, stSmall);
+{$ENDIF}
+  Result := SmallInt(GetInt(ColumnIndex));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  an <code>uint</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetUInt(ColumnIndex: Integer): Cardinal;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckColumnConvertion(ColumnIndex, stLongWord);
+{$ENDIF}
+  Result := LongWord(GetLong(ColumnIndex));
 end;
 
 {**
@@ -740,6 +1206,23 @@ function TZAbstractResultSet.GetInt(ColumnIndex: Integer): Integer;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckColumnConvertion(ColumnIndex, stInteger);
+{$ENDIF}
+  Result := 0;
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>ulong</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetULong(ColumnIndex: Integer): UInt64;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckColumnConvertion(ColumnIndex, stULong);
 {$ENDIF}
   Result := 0;
 end;
@@ -798,6 +1281,23 @@ end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
+  a <code>currency</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetCurrency(ColumnIndex: Integer): Currency;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckColumnConvertion(ColumnIndex, stCurrency);
+{$ENDIF}
+  Result := GetBigDecimal(ColumnIndex);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
   a <code>java.sql.BigDecimal</code> in the Java programming language.
 
   @param columnIndex the first column is 1, the second is 2, ...
@@ -823,7 +1323,7 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-function TZAbstractResultSet.GetBytes(ColumnIndex: Integer): TByteDynArray;
+function TZAbstractResultSet.GetBytes(ColumnIndex: Integer): TBytes;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckColumnConvertion(ColumnIndex, stBytes);
@@ -916,7 +1416,14 @@ begin
   begin
     Blob := GetBlob(ColumnIndex);
     if Blob <> nil then
-      Result := Blob.GetStream;
+      if Blob.IsClob then
+        Result := Blob.GetStream
+      else
+        if Self.GetMetaData.GetColumnType(ColumnIndex) = stUnicodeStream then
+          Result := TStringStream.Create(GetValidatedAnsiStringFromBuffer(Blob.GetBuffer,
+            Blob.Length, ConSettings, ConSettings.CTRL_CP))
+        else
+          Result := Blob.GetStream;
   end;
   LastWasNull := (Result = nil);
 end;
@@ -957,7 +1464,10 @@ begin
   begin
     Blob := GetBlob(ColumnIndex);
     if Blob <> nil then
-      Result := Blob.GetUnicodeStream;
+      if Blob.IsClob then
+        Result := Blob.GetUnicodeStream
+      else
+        Result := Blob.GetStream;
   end;
   LastWasNull := (Result = nil);
 end;
@@ -1019,6 +1529,20 @@ end;
 
 {**
   Returns the value of the designated column in the current row
+  of this <code>ResultSet</code> object as a <code>IZResultSet</code> object
+  in the Java programming language.
+
+  @param ColumnIndex the first column is 1, the second is 2, ...
+  @return a <code>IZResultSet</code> object representing the SQL
+    <code>IZResultSet</code> value in the specified column
+}
+function TZAbstractResultSet.GetDataSet(ColumnIndex: Integer): IZDataSet;
+begin
+  Result := nil;
+end;
+
+{**
+  Returns the value of the designated column in the current row
   of this <code>ResultSet</code> object as a <code>Variant</code> object.
 
   @param ColumnIndex the first column is 1, the second is 2, ...
@@ -1034,45 +1558,31 @@ begin
 {$ENDIF}
   Metadata := TZAbstractResultSetMetadata(FMetadata);
 {$IFNDEF DISABLE_CHECKING}
-  if (Metadata = nil) or (ColumnIndex <= 0)
-    or (ColumnIndex > Metadata.GetColumnCount) then
-  begin
+  if (Metadata = nil) or (ColumnIndex < FirstDbcIndex)
+    or (ColumnIndex > Metadata.GetColumnCount{$IFDEF GENERIC_INDEX}-1{$ENDIF}) then
     raise EZSQLException.Create(
       Format(SColumnIsNotAccessable, [ColumnIndex]));
-  end;
 {$ENDIF}
 
   case Metadata.GetColumnType(ColumnIndex) of
     stBoolean:
-      begin
-        Result.VType := vtBoolean;
-        Result.VBoolean := GetBoolean(ColumnIndex);
-      end;
-    stByte, stShort, stInteger, stLong:
-      begin
-        Result.VType := vtInteger;
-        Result.VInteger := GetLong(ColumnIndex);
-      end;
-    stFloat, stDouble, stBigDecimal:
-      begin
-        Result.VType := vtFloat;
-        Result.VFloat := GetBigDecimal(ColumnIndex);
-      end;
+      Result := EncodeBoolean(GetBoolean(ColumnIndex));
+    stShort, stSmall, stInteger, stLong:
+      Result := EncodeInteger(GetLong(ColumnIndex));
+    stByte, stWord, stLongWord, stULong:
+      Result := EncodeUInteger(GetULong(ColumnIndex));
+    stFloat, stDouble, stCurrency, stBigDecimal:
+      Result := EncodeFloat(GetBigDecimal(ColumnIndex));
     stDate, stTime, stTimestamp:
-      begin
-        Result.VType := vtDateTime;
-        Result.VDateTime := GetTimestamp(ColumnIndex);
-      end;
-    stString, stBytes, stAsciiStream, stBinaryStream:
-      begin
-        Result.VType := vtString;
-        Result.VString := String(GetString(ColumnIndex));
-      end;
-    stUnicodeString, stUnicodeStream:
-      begin
-        Result.VType := vtUnicodeString;
-        Result.VUnicodeString := GetUnicodeString(ColumnIndex);
-      end;
+      Result := EncodeDateTime(GetTimestamp(ColumnIndex));
+    stBytes, stBinaryStream, stGUID:
+      Result := EncodeBytes(GetBytes(ColumnIndex));
+    stString, stAsciiStream, stUnicodeString, stUnicodeStream:
+      if (not ConSettings^.ClientCodePage^.IsStringFieldCPConsistent) or
+          (ConSettings^.ClientCodePage^.CP = zCP_UTF8) then
+        Result := EncodeUnicodeString(GetUnicodeString(ColumnIndex))
+      else
+        Result := EncodeRawByteString(GetRawByteString(ColumnIndex));
     else
       Result.VType := vtNull;
   end;
@@ -1131,6 +1641,66 @@ end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
+  a <code>PAnsiChar</code> in the Delphi programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPAnsiCharByName(const ColumnName: string): PAnsiChar;
+begin
+  Result := GetPAnsiChar(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PAnsiChar</code> in the Delphi programming language.
+
+  @param columnName the SQL name of the column
+  @param Len the length in bytes
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPAnsiCharByName(const ColumnName: string;
+  out Len: NativeUInt): PAnsiChar;
+begin
+  Result := GetPAnsiChar(GetColumnIndex(ColumnName), Len);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PWideChar</code> in the Delphi programming language.
+
+  @param columnName the SQL name of the column
+  @param Len the Length of th UCS2 string in codepoints
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPWideCharByName(const ColumnName: string;
+  out Len: NativeUInt): PWideChar;
+begin
+  Result := GetPWideChar(GetColumnIndex(ColumnName), Len);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>PWideChar</code> in the Delphi programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetPWideCharByName(const ColumnName: string): PWideChar;
+begin
+  Result := GetPWideChar(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
   a <code>String</code> in the Java programming language.
 
   @param columnName the SQL name of the column
@@ -1145,18 +1715,58 @@ end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
+  a <code>AnsiString</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetAnsiStringByName(const ColumnName: string): AnsiString;
+begin
+  Result := GetAnsiString(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>UTF8String</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetUTF8StringByName(const ColumnName: string): UTF8String;
+begin
+  Result := GetUTF8String(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>RawByteString</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractResultSet.GetRawByteStringByName(const ColumnName: string): RawByteString;
+begin
+  Result := GetRawByteString(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
   a <code>String</code> in the Java programming language.
 
   @param columnName the SQL name of the column
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-{$IFDEF DELPHI12_UP}
-function TZAbstractResultSet.GetAnsiStringByName(const ColumnName: string): AnsiString;
+function TZAbstractResultSet.GetBinaryStringByName(const ColumnName: string): RawByteString;
 begin
-  Result := GetAnsiString(GetColumnIndex(ColumnName));
+  Result := GetBinaryString(GetColumnIndex(ColumnName));
 end;
-{$ENDIF}
 
 {**
   Gets the value of the designated column in the current row
@@ -1168,7 +1778,7 @@ end;
     value returned is <code>null</code>
 }
 function TZAbstractResultSet.GetUnicodeStringByName(const ColumnName: string):
-  WideString;
+  ZWideString;
 begin
   Result := GetUnicodeString(GetColumnIndex(ColumnName));
 end;
@@ -1196,7 +1806,7 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>0</code>
 }
-function TZAbstractResultSet.GetByteByName(const ColumnName: string): ShortInt;
+function TZAbstractResultSet.GetByteByName(const ColumnName: string): Byte;
 begin
   Result := GetByte(GetColumnIndex(ColumnName));
 end;
@@ -1210,9 +1820,51 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>0</code>
 }
-function TZAbstractResultSet.GetShortByName(const ColumnName: string): SmallInt;
+function TZAbstractResultSet.GetShortByName(const ColumnName: string): ShortInt;
 begin
-  Result := GetShort(GetColumnIndex(ColumnName));
+  Result := GetSmall(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>word</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetWordByName(const ColumnName: string): Word;
+begin
+  Result := GetWord(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>small</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetSmallByName(const ColumnName: string): SmallInt;
+begin
+  Result := GetSmall(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  an <code>uint</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetUIntByName(const ColumnName: string): Cardinal;
+begin
+  Result := GetUInt(GetColumnIndex(ColumnName));
 end;
 
 {**
@@ -1227,6 +1879,20 @@ end;
 function TZAbstractResultSet.GetIntByName(const ColumnName: string): Integer;
 begin
   Result := GetInt(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>ulong</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetULongByName(const ColumnName: string): UInt64;
+begin
+  Result := GetULong(GetColumnIndex(ColumnName));
 end;
 
 {**
@@ -1274,6 +1940,20 @@ end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
+  a <code>currency</code> in the Java programming language.
+
+  @param columnName the SQL name of the column
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractResultSet.GetCurrencyByName(const ColumnName: string): Currency;
+begin
+  Result := GetCurrency(GetColumnIndex(ColumnName));
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
   a <code>java.math.BigDecimal</code> in the Java programming language.
 
   @param columnName the SQL name of the column
@@ -1295,7 +1975,7 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-function TZAbstractResultSet.GetBytesByName(const ColumnName: string): TByteDynArray;
+function TZAbstractResultSet.GetBytesByName(const ColumnName: string): TBytes;
 begin
   Result := GetBytes(GetColumnIndex(ColumnName));
 end;
@@ -1434,6 +2114,11 @@ begin
   Result := GetBlob(GetColumnIndex(ColumnName));
 end;
 
+function TZAbstractResultSet.GetDataSetByName(const ColumnName: string): IZDataSet;
+begin
+  Result := GetDataSet(GetColumnIndex(ColumnName));
+end;
+
 {**
   Returns the value of the designated column in the current row
   of this <code>ResultSet</code> object as a <code>Variant</code> object.
@@ -1532,7 +2217,7 @@ function TZAbstractResultSet.GetColumnIndex(const ColumnName: string): Integer;
 begin
   Result := FindColumn(ColumnName);
 
-  if Result < 1 then
+  if Result < {$IFDEF GENERIC_INDEX}0{$ELSE}1{$ENDIF} then
     raise EZSQLException.Create(Format(SColumnWasNotFound, [ColumnName]));
 end;
 
@@ -1550,27 +2235,23 @@ var
 begin
   CheckClosed;
   Metadata := TZAbstractResultSetMetadata(FMetadata);
-  Result := 0;
+  Result := InvalidDbcIndex;
 
   { Search for case sensitive columns. }
-  for I := 1 to Metadata.GetColumnCount do
-  begin
+  for I := FirstDbcIndex to Metadata.GetColumnCount{$IFDEF GENERIC_INDEX}-1{$ENDIF} do
     if Metadata.GetColumnLabel(I) = ColumnName then
     begin
       Result := I;
       Exit;
     end;
-  end;
 
   { Search for case insensitive columns. }
-  for I := 1 to Metadata.GetColumnCount do
-  begin
+  for I := FirstDbcIndex to Metadata.GetColumnCount{$IFDEF GENERIC_INDEX}-1{$ENDIF} do
     if AnsiUpperCase(Metadata.GetColumnLabel(I)) = AnsiUpperCase(ColumnName) then
     begin
       Result := I;
       Exit;
     end;
-  end;
 end;
 
 //---------------------------------------------------------------------
@@ -1681,7 +2362,7 @@ end;
   second number 2, and so on.
   @return the current row number; <code>0</code> if there is no current row
 }
-function TZAbstractResultSet.GetRow: Integer;
+function TZAbstractResultSet.GetRow: NativeInt;
 begin
   Result := FRowNo;
 end;
@@ -1941,7 +2622,7 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateBoolean(ColumnIndex: Integer; Value: Boolean);
+procedure TZAbstractResultSet.UpdateBoolean(ColumnIndex: Integer; const Value: Boolean);
 begin
   RaiseReadOnlyException;
 end;
@@ -1958,7 +2639,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateByte(ColumnIndex: Integer;
-  Value: ShortInt);
+  const Value: Byte);
 begin
   RaiseReadOnlyException;
 end;
@@ -1970,10 +2651,61 @@ end;
   update the underlying database; instead the <code>updateRow</code> or
   <code>insertRow</code> methods are called to update the database.
 
+
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateShort(ColumnIndex: Integer; Value: SmallInt);
+procedure TZAbstractResultSet.UpdateShort(ColumnIndex: Integer;
+  const Value: ShortInt);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>word</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateWord(ColumnIndex: Integer;
+  const Value: Word);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>small</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateSmall(ColumnIndex: Integer;
+  const Value: SmallInt);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with an <code>uint</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateUInt(ColumnIndex: Integer;
+  const Value: Cardinal);
 begin
   RaiseReadOnlyException;
 end;
@@ -1988,7 +2720,24 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateInt(ColumnIndex: Integer; Value: Integer);
+procedure TZAbstractResultSet.UpdateInt(ColumnIndex: Integer;
+  const Value: Integer);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>ulong</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateULong(ColumnIndex: Integer;
+  const Value: UInt64);
 begin
   RaiseReadOnlyException;
 end;
@@ -2003,7 +2752,8 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateLong(ColumnIndex: Integer; Value: Int64);
+procedure TZAbstractResultSet.UpdateLong(ColumnIndex: Integer;
+  const Value: Int64);
 begin
   RaiseReadOnlyException;
 end;
@@ -2018,7 +2768,8 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateFloat(ColumnIndex: Integer; Value: Single);
+procedure TZAbstractResultSet.UpdateFloat(ColumnIndex: Integer;
+  const Value: Single);
 begin
   RaiseReadOnlyException;
 end;
@@ -2033,7 +2784,24 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateDouble(ColumnIndex: Integer; Value: Double);
+procedure TZAbstractResultSet.UpdateDouble(ColumnIndex: Integer;
+  const Value: Double);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>currency</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateCurrency(ColumnIndex: Integer;
+  const Value: Currency);
 begin
   RaiseReadOnlyException;
 end;
@@ -2050,7 +2818,93 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateBigDecimal(ColumnIndex: Integer;
-  Value: Extended);
+  const Value: Extended);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>PChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePChar(ColumnIndex: Integer;
+  const Value: PChar);
+begin
+  {$IFDEF UNICODE}
+  UpdatePWideChar(ColumnIndex, Value);
+  {$ELSE}
+  UpdatePAnsiChar(ColumnIndex, Value);
+  {$ENDIF}
+end;
+
+{**
+  Updates the designated column with a <code>PAnsiChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePAnsiChar(ColumnIndex: Integer;
+  Value: PAnsiChar);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>TZAnsiRec</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param Len the pointer to length in bytes
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePAnsiChar(ColumnIndex: Integer;
+  Value: PAnsiChar; Len: PNativeUInt);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>TZAnsiRec</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePWideChar(ColumnIndex: Integer;
+  Value: PWideChar);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>TZAnsiRec</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param Len a pointer to length of the string in codepoints
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePWideChar(ColumnIndex: Integer;
+  Value: PWideChar; Len: PNativeUInt);
 begin
   RaiseReadOnlyException;
 end;
@@ -2065,13 +2919,14 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdatePChar(ColumnIndex: Integer; Value: PChar);
+procedure TZAbstractResultSet.UpdateString(ColumnIndex: Integer;
+  const Value: String);
 begin
-  UpdateString(ColumnIndex, Value);
+  RaiseReadOnlyException;
 end;
 
 {**
-  Updates the designated column with a <code>String</code> value.
+  Updates the designated column with a <code>AnsiString</code> value.
   The <code>updateXXX</code> methods are used to update column values in the
   current row or the insert row.  The <code>updateXXX</code> methods do not
   update the underlying database; instead the <code>updateRow</code> or
@@ -2080,7 +2935,40 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateString(ColumnIndex: Integer; const Value: String);
+procedure TZAbstractResultSet.UpdateAnsiString(ColumnIndex: Integer;
+  const Value: AnsiString);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>UTF8String</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateUTF8String(ColumnIndex: Integer;
+  const Value: UTF8String);
+begin
+  RaiseReadOnlyException;
+end;
+
+{**
+  Updates the designated column with a <code>RawByteString</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateRawByteString(ColumnIndex: Integer; const
+  Value: RawByteString);
 begin
   RaiseReadOnlyException;
 end;
@@ -2095,12 +2983,16 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-{$IFDEF DELPHI12_UP}
-procedure TZAbstractResultSet.UpdateAnsiString(ColumnIndex: Integer; const Value: AnsiString);
+procedure TZAbstractResultSet.UpdateBinaryString(ColumnIndex: Integer;
+  const Value: RawByteString);
 begin
-  UpdateString(ColumnIndex, ZDbcString(Value));
+  case GetMetaData.GetColumnType(ColumnIndex) of
+    stBytes: UpdateBytes(ColumnIndex, StrToBytes(Value));
+    stBinaryStream: GetBlob(ColumnIndex).SetString(Value);
+    else
+      UpdateRawByteString(ColumnIndex, Value);
+  end;
 end;
-{$ENDIF}
 
 {**
   Updates the designated column with a <code>WideString</code> value.
@@ -2113,7 +3005,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateUnicodeString(ColumnIndex: Integer;
-  const Value: WideString);
+  const Value: ZWideString);
 begin
   RaiseReadOnlyException;
 end;
@@ -2129,7 +3021,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateBytes(ColumnIndex: Integer;
-  const Value: TByteDynArray);
+  const Value: TBytes);
 begin
   RaiseReadOnlyException;
 end;
@@ -2144,7 +3036,8 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateDate(ColumnIndex: Integer; Value: TDateTime);
+procedure TZAbstractResultSet.UpdateDate(ColumnIndex: Integer;
+  const Value: TDateTime);
 begin
   RaiseReadOnlyException;
 end;
@@ -2159,7 +3052,8 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractResultSet.UpdateTime(ColumnIndex: Integer; Value: TDateTime);
+procedure TZAbstractResultSet.UpdateTime(ColumnIndex: Integer;
+  const Value: TDateTime);
 begin
   RaiseReadOnlyException;
 end;
@@ -2176,7 +3070,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateTimestamp(ColumnIndex: Integer;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
   RaiseReadOnlyException;
 end;
@@ -2192,7 +3086,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateAsciiStream(ColumnIndex: Integer;
-  Value: TStream);
+  const Value: TStream);
 begin
   RaiseReadOnlyException;
 end;
@@ -2209,11 +3103,21 @@ end;
   @param length the length of the stream
 }
 procedure TZAbstractResultSet.UpdateBinaryStream(ColumnIndex: Integer;
-  Value: TStream);
+  const Value: TStream);
 begin
   RaiseReadOnlyException;
 end;
 
+procedure TZAbstractResultSet.UpdateLob(ColumnIndex: Integer; const Value: IZBlob);
+begin
+  RaiseReadOnlyException;
+end;
+
+procedure TZAbstractResultSet.UpdateDataSet(ColumnIndex: Integer;
+  const Value: IZDataSet);
+begin
+  RaiseReadOnlyException;
+end;
 {**
   Updates the designated column with a character stream value.
   The <code>updateXXX</code> methods are used to update column values in the
@@ -2225,7 +3129,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateUnicodeStream(ColumnIndex: Integer;
-  Value: TStream);
+  const Value: TStream);
 begin
   RaiseReadOnlyException;
 end;
@@ -2248,6 +3152,10 @@ begin
     vtInteger: UpdateLong(ColumnIndex, Value.VInteger);
     vtFloat: UpdateBigDecimal(ColumnIndex, Value.VFloat);
     vtString: UpdateString(ColumnIndex, Value.VString);
+    vtAnsiString: UpdateAnsiString(ColumnIndex, Value.VAnsiString);
+    vtUTF8String: UpdateUTF8String(ColumnIndex, Value.VUTF8String);
+    vtRawByteString: UpdateRawByteString(ColumnIndex, Value.VRawByteString);
+    vtBytes: UpdateBytes(ColumnIndex, Value.VBytes);
     vtDateTime: UpdateTimestamp(ColumnIndex, Value.VDateTime);
     vtUnicodeString: UpdateUnicodeString(ColumnIndex, Value.VUnicodeString);
   else
@@ -2291,7 +3199,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateBooleanByName(const ColumnName: string;
-  Value: Boolean);
+  const Value: Boolean);
 begin
   UpdateBoolean(GetColumnIndex(ColumnName), Value);
 end;
@@ -2307,13 +3215,13 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateByteByName(const ColumnName: string;
-  Value: ShortInt);
+  const Value: Byte);
 begin
   UpdateByte(GetColumnIndex(ColumnName), Value);
 end;
 
 {**
-  Updates the designated column with a <code>short</code> value.
+  Updates the designated column with a <code>ShortInt</code> value.
   The <code>updateXXX</code> methods are used to update column values in the
   current row or the insert row.  The <code>updateXXX</code> methods do not
   update the underlying database; instead the <code>updateRow</code> or
@@ -2323,9 +3231,57 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateShortByName(const ColumnName: string;
-  Value: SmallInt);
+  const Value: ShortInt);
 begin
   UpdateShort(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>Word</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateWordByName(const ColumnName: string;
+  const Value: Word);
+begin
+  UpdateWord(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>SmallInt</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateSmallByName(const ColumnName: string;
+  const Value: SmallInt);
+begin
+  UpdateSmall(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with an <code>uint</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateUIntByName(const ColumnName: string;
+  const Value: Cardinal);
+begin
+  UpdateUInt(GetColumnIndex(ColumnName), Value);
 end;
 
 {**
@@ -2339,7 +3295,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateIntByName(const ColumnName: string;
-  Value: Integer);
+  const Value: Integer);
 begin
   UpdateInt(GetColumnIndex(ColumnName), Value);
 end;
@@ -2354,8 +3310,24 @@ end;
   @param columnName the name of the column
   @param x the new column value
 }
+procedure TZAbstractResultSet.UpdateULongByName(const ColumnName: string;
+  const Value: UInt64);
+begin
+  UpdateULong(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>long</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
 procedure TZAbstractResultSet.UpdateLongByName(const ColumnName: string;
-  Value: Int64);
+  const Value: Int64);
 begin
   UpdateLong(GetColumnIndex(ColumnName), Value);
 end;
@@ -2371,7 +3343,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateFloatByName(const ColumnName: string;
-  Value: Single);
+  const Value: Single);
 begin
   UpdateFloat(GetColumnIndex(ColumnName), Value);
 end;
@@ -2387,9 +3359,25 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateDoubleByName(const ColumnName: string;
-  Value: Double);
+  const Value: Double);
 begin
   UpdateDouble(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>currency</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateCurrencyByName(const ColumnName: string;
+  const Value: Currency);
+begin
+  UpdateCurrency(GetColumnIndex(ColumnName), Value);
 end;
 
 {**
@@ -2404,13 +3392,46 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateBigDecimalByName(const ColumnName: string;
-  Value: Extended);
+  const Value: Extended);
 begin
   UpdateBigDecimal(GetColumnIndex(ColumnName), Value);
 end;
 
 {**
-  Updates the designated column with a <code>String</code> value.
+  Updates the designated column with a <code>PAnsiChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePAnsiCharByName(const ColumnName: string;
+  Value: PAnsiChar);
+begin
+  UpdatePAnsiChar(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>PAnsiChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param Len the pointer to the length in bytes
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePAnsiCharByName(const ColumnName: string;
+  Value: PAnsiChar; Len: PNativeUInt);
+begin
+  UpdatePAnsiChar(GetColumnIndex(ColumnName), Value, Len);
+end;
+
+{**
+  Updates the designated column with a <code>PChar</code> value.
   The <code>updateXXX</code> methods are used to update column values in the
   current row or the insert row.  The <code>updateXXX</code> methods do not
   update the underlying database; instead the <code>updateRow</code> or
@@ -2420,9 +3441,42 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdatePCharByName(const ColumnName: string;
-   Value: PChar);
+  const Value: PChar);
 begin
   UpdatePChar(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>PWideChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePWideCharByName(const ColumnName: string;
+  Value: PWideChar);
+begin
+  UpdatePWideChar(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>PWideChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param Len the pointer to the length of the string in codepopints
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdatePWideCharByName(const ColumnName: string;
+  Value: PWideChar; Len: PNativeUInt);
+begin
+  UpdatePWideChar(GetColumnIndex(ColumnName), Value, Len);
 end;
 
 {**
@@ -2442,6 +3496,54 @@ begin
 end;
 
 {**
+  Updates the designated column with a <code>AnsiString</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateAnsiStringByName(const ColumnName: string;
+   const Value: AnsiString);
+begin
+  UpdateAnsiString(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>UTF8String</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateUTF8StringByName(const ColumnName: string;
+   const Value: UTF8String);
+begin
+  UpdateUTF8String(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
+  Updates the designated column with a <code>RawByteString</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnName the name of the column
+  @param x the new column value
+}
+procedure TZAbstractResultSet.UpdateRawByteStringByName(const ColumnName: string;
+   const Value: RawByteString);
+begin
+  UpdateRawByteString(GetColumnIndex(ColumnName), Value);
+end;
+
+{**
   Updates the designated column with a <code>String</code> value.
   The <code>updateXXX</code> methods are used to update column values in the
   current row or the insert row.  The <code>updateXXX</code> methods do not
@@ -2451,13 +3553,11 @@ end;
   @param columnName the name of the column
   @param x the new column value
 }
-{$IFDEF DELPHI12_UP}
-procedure TZAbstractResultSet.UpdateAnsiStringByName(const ColumnName: string;
-   const Value: AnsiString);
+procedure TZAbstractResultSet.UpdateBinaryStringByName(const ColumnName: string;
+   const Value: RawByteString);
 begin
-  UpdateAnsiString(GetColumnIndex(ColumnName), Value);
+  UpdateBinaryString(GetColumnIndex(ColumnName), Value);
 end;
-{$ENDIF}
 
 {**
   Updates the designated column with a <code>WideString</code> value.
@@ -2470,7 +3570,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateUnicodeStringByName(const ColumnName: string;
-  const Value: WideString);
+  const Value: ZWideString);
 begin
   UpdateUnicodeString(GetColumnIndex(ColumnName), Value);
 end;
@@ -2495,7 +3595,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateBytesByName(const ColumnName: string;
-  const Value: TByteDynArray);
+  const Value: TBytes);
 begin
   UpdateBytes(GetColumnIndex(ColumnName), Value);
 end;
@@ -2511,7 +3611,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateDateByName(const ColumnName: string;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
   UpdateDate(GetColumnIndex(ColumnName), Value);
 end;
@@ -2527,7 +3627,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateTimeByName(const ColumnName: string;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
   UpdateTime(GetColumnIndex(ColumnName), Value);
 end;
@@ -2544,7 +3644,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateTimestampByName(const ColumnName: string;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
   UpdateTimestamp(GetColumnIndex(ColumnName), Value);
 end;
@@ -2560,7 +3660,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateAsciiStreamByName(const ColumnName: string;
-  Value: TStream);
+  const Value: TStream);
 begin
   UpdateAsciiStream(GetColumnIndex(ColumnName), Value);
 end;
@@ -2576,9 +3676,15 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateBinaryStreamByName(const ColumnName: string;
-  Value: TStream);
+  const Value: TStream);
 begin
   UpdateBinaryStream(GetColumnIndex(ColumnName), Value);
+end;
+
+procedure TZAbstractResultSet.UpdateDataSetByName(const ColumnName: string;
+  const Value: IZDataSet);
+begin
+  UpdateDataSet(GetColumnIndex(ColumnName), Value);
 end;
 
 {**
@@ -2592,7 +3698,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractResultSet.UpdateUnicodeStreamByName(const ColumnName: string;
-  Value: TStream);
+  const Value: TStream);
 begin
   UpdateUnicodeStream(GetColumnIndex(ColumnName), Value);
 end;
@@ -2722,25 +3828,13 @@ end;
   @param ColumnIndices column indices to compare.
   @param ColumnDirs compare direction for each columns.
 }
-function TZAbstractResultSet.CompareRows(Row1, Row2: Integer;
-  const ColumnIndices: TIntegerDynArray; const ColumnDirs: TBooleanDynArray): Integer;
+function TZAbstractResultSet.CompareRows(Row1, Row2: NativeInt;
+  const ColumnIndices: TIntegerDynArray; const CompareFuncs: TCompareFuncs): Integer;
 var
   I: Integer;
   ColumnIndex: Integer;
   SaveRowNo: Integer;
   Value1, Value2: TZVariant;
-
-  function CompareFloat(Value1, Value2: Extended): Integer;
-  begin
-    Value1 := Value1 - Value2;
-    if Value1 > 0 then
-      Result := 1
-    else if Value1 < 0 then
-      Result := -1
-    else
-      Result := 0;
-  end;
-
 begin
   Result := 0;
   SaveRowNo := RowNo;
@@ -2753,54 +3847,70 @@ begin
       Value1 := GetValue(ColumnIndex);
       MoveAbsolute(Row2);
       Value2 := GetValue(ColumnIndex);
-
-      { Checks for both Null columns. }
-      if (Value1.VType = vtNull) and (Value2.VType = vtNull) then
-        Continue;
-      { Checks for not-Null and Null columns. }
-      if (Value1.VType = vtNull) or (Value2.VType = vtNull) then
-      begin
-        if Value1.VType <> vtNull then
-          Result := 1
-        else
-          Result := -1;
-        if not ColumnDirs[I] then
-          Result := -Result;
-        Break;
-      end;
-      case Value1.VType of
-        vtBoolean:
-          begin
-            if Value1.VBoolean = Value2.VBoolean then
-              Result := 0
-            else if Value1.VBoolean = True then
-              Result := 1
-            else
-              Result := -1;
-          end;
-        vtInteger:
-          Result := Value1.VInteger - Value2.VInteger;
-        vtFloat:
-          Result := CompareFloat(Value1.VFloat, Value2.VFloat);
-        vtDateTime:
-          Result := CompareFloat(Value1.VDateTime, Value2.VDateTime);
-        vtString:
-          Result := AnsiCompareStr(Value1.VString, Value2.VString);
-        vtUnicodeString:
-          Result := WideCompareStr(Value1.VUnicodeString, Value2.VUnicodeString);
-      end;
-      if Result <> 0 then
-      begin
-        if not ColumnDirs[I] then
-          Result := -Result;
-        Break;
-      end;
+      Result := CompareFuncs[i]((Value1.VType = vtNull), (Value2.VType = vtNull), Value1, Value2);
+      if Result <> 0 then Break;
     end;
   finally
     MoveAbsolute(SaveRowNo);
   end;
 end;
 
+function TZAbstractResultSet.GetCompareFuncs(const ColumnIndices: TIntegerDynArray;
+  const CompareKinds: TComparisonKindArray): TCompareFuncs;
+var I: Integer;
+begin
+  SetLength(Result, Length(ColumnIndices));
+  for i := low(ColumnIndices) to high(ColumnIndices) do
+    case CompareKinds[i] of
+      ckAscending:
+        case TZAbstractResultSetMetadata(FMetadata).GetColumnType(ColumnIndices[i]) of
+          stBoolean:
+            Result[i] := CompareBoolean_Asc;
+          stShort, stSmall, stInteger, stLong:
+            Result[i] := CompareInt64_Asc;
+          stByte, stWord, stLongWord, stULong:
+            Result[i] := CompareUInt64_Asc;
+          stFloat, stDouble, stBigDecimal:
+            Result[i] := CompareFloat_Asc;
+          stDate, stTime, stTimestamp:
+            Result[i] := CompareDateTime_Asc;
+          stBytes, stBinaryStream, stGUID:
+            Result[i] := CompareBytes_Asc;
+          stString, stAsciiStream, stUnicodeString, stUnicodeStream:
+            if (not ConSettings^.ClientCodePage^.IsStringFieldCPConsistent) or
+                (ConSettings^.ClientCodePage^.CP = zCP_UTF8) then
+              Result[i] := CompareUnicodeString_Asc
+            else
+              Result[I] := CompareRawByteString_Asc
+          else
+            Result[i] := CompareNothing;
+        end;
+      ckDescending:
+        case TZAbstractResultSetMetadata(FMetadata).GetColumnType(ColumnIndices[i]) of
+          stBoolean:
+            Result[i] := CompareBoolean_Desc;
+          stShort, stSmall, stInteger, stLong:
+            Result[i] := CompareInt64_Desc;
+          stByte, stWord, stLongWord, stULong:
+            Result[i] := CompareUInt64_Desc;
+          stFloat, stDouble, stBigDecimal:
+            Result[i] := CompareFloat_Desc;
+          stDate, stTime, stTimestamp:
+            Result[i] := CompareDateTime_Desc;
+          stBytes, stBinaryStream, stGUID:
+            Result[i] := CompareBytes_Desc;
+          stString, stAsciiStream, stUnicodeString, stUnicodeStream:
+            if (not ConSettings^.ClientCodePage^.IsStringFieldCPConsistent) or
+                (ConSettings^.ClientCodePage^.CP = zCP_UTF8) then
+              Result[i] := CompareUnicodeString_Desc
+            else
+              Result[I] := CompareRawByteString_Desc
+          else
+            Result[i] := CompareNothing;
+        end;
+      ckEquals: raise Exception.Create('Compare Equals is not allowed here!');
+    end;
+end;
 {**
   Returns the <code>Statement</code> object that produced this
   <code>ResultSet</code> object.
@@ -2817,9 +3927,9 @@ begin
   Result := FStatement;
 end;
 
-function TZAbstractResultSet.GetClientCodePage: PZCodePage;
+function TZAbstractResultSet.GetConSettings: PZConsettings;
 begin
-  Result := ClientCodePage;
+  Result := ConSettings;
 end;
 
 { TZAbstractBlob }
@@ -2867,6 +3977,14 @@ begin
   FUpdated := False;
 end;
 
+procedure TZAbstractBlob.InternalClear;
+begin
+  if Assigned(FBlobData) then
+    FreeMem(FBlobData);
+  FBlobData := nil;
+  FBlobSize := -1;
+end;
+
 {**
   Destroys this object and cleanups the memory.
 }
@@ -2881,10 +3999,7 @@ end;
 }
 procedure TZAbstractBlob.Clear;
 begin
-  if Assigned(FBlobData) then
-    FreeMem(FBlobData);
-  FBlobData := nil;
-  FBlobSize := -1;
+  InternalClear;
   FUpdated := True;
 end;
 
@@ -2892,10 +4007,121 @@ end;
   Clones this blob object.
   @return a clonned blob object.
 }
-function TZAbstractBlob.Clone: IZBlob;
+function TZAbstractBlob.Clone(Empty: Boolean = False): IZBlob;
 begin
-  Result := TZAbstractBlob.CreateWithData(FBlobData, FBlobSize);
+  if Empty then
+    Result := TZAbstractBlob.CreateWithData(nil, 0)
+  else
+    Result := TZAbstractBlob.CreateWithData(FBlobData, FBlobSize);
 end;
+
+function TZAbstractBlob.IsClob: Boolean;
+begin
+  Result := False;
+end;
+
+function TZAbstractBlob.{%H-}GetRawByteString: RawByteString;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetRawByteString(Const Value: RawByteString; const CodePage: Word);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetAnsiString: AnsiString;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetAnsiString(Const Value: AnsiString);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetUTF8String: UTF8String;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetUTF8String(Const Value: UTF8String);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetUnicodeString(const Value: ZWideString);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetUnicodeString: ZWideString;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetStream(const Value: TStream; const CodePage: Word);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetRawByteStream: TStream;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetAnsiStream: TStream;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}{%H-}GetUTF8Stream: TStream;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetUnicodeStream: TStream;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetPAnsiChar(const CodePage: Word): PAnsiChar;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetPAnsiChar(const Buffer: PAnsiChar; const CodePage: Word; const Len: Cardinal);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+function TZAbstractBlob.{%H-}GetPWideChar: PWideChar;
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+procedure TZAbstractBlob.SetPWideChar(const Buffer: PWideChar; const Len: Cardinal);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+
+{$IFDEF WITH_MM_CAN_REALLOC_EXTERNAL_MEM}
+procedure TZAbstractBlob.SetBlobData(const Buffer: Pointer; const Len: Cardinal);
+begin
+  if Buffer <> FBlobData then
+    Clear;
+  Self.FBlobData := Buffer;
+  Self.FBlobSize := Len;
+  Self.FUpdated := True;
+end;
+
+procedure TZAbstractBlob.SetBlobData(const Buffer: Pointer; const Len: Cardinal;
+  Const CodePage: Word);
+begin
+  raise Exception.Create(Format(cSOperationIsNotAllowed3, ['binary']));
+end;
+{$ENDIF}
+
 
 {**
   Checks if this blob has an empty content.
@@ -2919,7 +4145,7 @@ end;
   Gets the length of the stored data.
   @return the length of the stored data or null if the blob is empty.
 }
-function TZAbstractBlob.Length: LongInt;
+function TZAbstractBlob.Length: Integer;
 begin
   Result := FBlobSize;
 end;
@@ -2928,55 +4154,44 @@ end;
   Gets the string from the stored data.
   @return a string which contains the stored data.
 }
-function TZAbstractBlob.GetString: ZAnsiString;
+function TZAbstractBlob.GetString: RawByteString;
 begin
-  if (FBlobSize > 0) and Assigned(FBlobData) then
-  begin
-    System.SetString(Result, PAnsiChar(FBlobData), FBlobSize);
-  end
-  else
-    Result := '';
+  SetLength(Result, FBlobSize);
+  System.Move(FBlobData^, Result[1], FBlobSize);
 end;
 
 {**
   Sets a new string data to this blob content.
   @param Value a new string data.
 }
-procedure TZAbstractBlob.SetString(const Value: ZAnsiString);
+procedure TZAbstractBlob.SetString(const Value: RawByteString);
 begin
   Clear;
-  FBlobSize := System.Length(Value);
-  if FBlobSize > 0 then
+  if IsClob then
   begin
+    FBlobSize := System.Length(Value)+1;
     GetMem(FBlobData, FBlobSize);
-    System.Move(PAnsiChar(Value)^, FBlobData^, FBlobSize);
+    if FBlobSize > 1 then
+      System.Move(PAnsiChar(Value)^, FBlobData^, FBlobSize);
+    (PAnsiChar(FBlobData)+FBlobSize-1)^ := #0;
+  end
+  else
+  begin
+    FBlobSize := System.Length(Value);
+    if FBlobSize > 0 then
+    begin
+      GetMem(FBlobData, FBlobSize);
+      System.Move(PAnsiChar(Value)^, FBlobData^, FBlobSize);
+    end;
   end;
   FUpdated := True;
-end;
-
-{**
-  Gets the wide string from the stored data.
-  @return a string which contains the stored data.
-}
-function TZAbstractBlob.GetUnicodeString: WideString;
-begin
-  Result := UTF8ToString(GetString);
-end;
-
-{**
-  Sets a new string data to this blob content.
-  @param Value a new wide string data.
-}
-procedure TZAbstractBlob.SetUnicodeString(const Value: WideString);
-begin
-  SetString(UTF8Encode(Value));
 end;
 
 {**
   Gets the byte buffer from the stored data.
   @return a byte buffer which contains the stored data.
 }
-function TZAbstractBlob.GetBytes: TByteDynArray;
+function TZAbstractBlob.GetBytes: TBytes;
 begin
   if not IsEmpty then
   begin
@@ -2994,7 +4209,7 @@ end;
   Sets a new byte buffer to this blob content.
   @param Value a new byte buffer.
 }
-procedure TZAbstractBlob.SetBytes(const Value: TByteDynArray);
+procedure TZAbstractBlob.SetBytes(const Value: TBytes);
 begin
   Clear;
   if Value <> nil then
@@ -3007,20 +4222,6 @@ begin
     end;
   end;
   FUpdated := True;
-end;
-
-function TZAbstractBlob.GetUnicodeStream: TStream;
-var
-  ws:WideString;
-begin
-  Result := TMemoryStream.Create;
-  if (FBlobSize > 0) and Assigned(FBlobData) then
-  begin
-    ws:=GetUnicodeString;
-    Result.Size := System.Length(ws)*2;
-    System.Move(ws[1], TMemoryStream(Result).Memory^, System.Length(ws)*2);
-  end;
-  Result.Position := 0;
 end;
 
 {**
@@ -3042,7 +4243,7 @@ end;
   Sets a data from the specified stream into this blob.
   @param Value a stream object to be stored into this blob.
 }
-procedure TZAbstractBlob.SetStream(Value: TStream);
+procedure TZAbstractBlob.SetStream(const Value: TStream);
 begin
   Clear;
   if Assigned(Value) then
@@ -3068,21 +4269,682 @@ begin
   Result := FBlobData;
 end;
 
-procedure TZAbstractBlob.SetBuffer(Buffer: Pointer; Length: Integer);
+procedure TZAbstractBlob.SetBuffer(const Buffer: Pointer; const Length: Integer);
 begin
+  InternalClear;
   FBlobSize := Length;
   if Assigned(Buffer) and ( Length > 0 ) then
   begin
-    FBlobData := nil;
     GetMem(FBlobData, Length);
-    Move(FBlobData^, Buffer^, Length);
-  end
-  else
-  begin
-    FBlobSize := -1;
-    FBlobData := nil;
+    Move(Buffer^, FBlobData^, Length);
   end;
   FUpdated := True;
+end;
+
+{ TZAbstractUnCachedBlob }
+procedure TZAbstractUnCachedBlob.ReadLob;
+begin
+  FLoaded := True;
+end;
+
+procedure TZAbstractUnCachedBlob.WriteLob;
+begin
+  //do nothing here, just a placeholder
+end;
+
+{**
+  Checks if this blob has an empty content.
+  @return <code>True</code> if this blob is empty.
+}
+function TZAbstractUnCachedBlob.IsEmpty: Boolean;
+begin
+  if not FLoaded then ReadLob;
+  Result := inherited IsEmpty;
+end;
+
+function TZAbstractUnCachedBlob.Length: Integer;
+begin
+  if not FLoaded then ReadLob;
+  Result := inherited Length;
+end;
+
+{**
+  Gets the string from the stored data.
+  @return a RawByteString which contains the stored data.
+}
+function TZAbstractUnCachedBlob.GetString: RawByteString;
+begin
+  if not FLoaded then ReadLob;
+  Result := inherited GetString;
+end;
+
+{**
+  Gets the byte buffer from the stored data.
+  @return a byte buffer which contains the stored data.
+}
+function TZAbstractUnCachedBlob.GetBytes: TBytes;
+begin
+  if not FLoaded then ReadLob;
+  Result := inherited GetBytes;
+end;
+
+function TZAbstractUnCachedBlob.GetStream: TStream;
+begin
+  if not FLoaded then ReadLob;
+  Result := inherited GetStream;
+end;
+
+function TZAbstractUnCachedBlob.GetBuffer: Pointer;
+begin
+  if not FLoaded then ReadLob;
+  Result := inherited Getbuffer;
+end;
+
+{ TZAbstractCLob }
+
+procedure TZAbstractCLob.InternalSetRawByteString(Const Value: RawByteString;
+  const CodePage: Word);
+begin
+  FBlobSize := System.Length(Value)+1;
+  FCurrentCodePage := CodePage;
+  ReallocMem(FBlobData, FBlobSize);
+  System.Move(PAnsiChar(Value)^, FBlobData^, FBlobSize);
+end;
+
+procedure TZAbstractCLob.InternalSetAnsiString(Const Value: AnsiString);
+begin
+  FBlobSize := System.Length(Value)+1;
+  FCurrentCodePage := ZDefaultSystemCodePage;
+  ReallocMem(FBlobData, FBlobSize);
+  System.Move(PAnsiChar(Value)^, FBlobData^, FBlobSize);
+end;
+
+procedure TZAbstractCLob.InternalSetUTF8String(Const Value: UTF8String);
+begin
+  FBlobSize := System.Length(Value)+1;
+  FCurrentCodePage := zCP_UTF8;
+  ReallocMem(FBlobData, FBlobSize);
+  System.Move(PAnsiChar(Value)^, FBlobData^, FBlobSize);
+end;
+
+procedure TZAbstractCLob.InternalSetUnicodeString(const Value: ZWideString);
+begin
+  FBlobSize := (System.Length(Value)+1) shl 1;
+  FCurrentCodePage := zCP_UTF16;
+  ReallocMem(FBlobData, FBlobSize);
+  System.Move(PWideChar(Value)^, FBlobData^, FBlobSize);
+end;
+
+procedure TZAbstractCLob.InternalSetPAnsiChar(const Buffer: PAnsiChar; CodePage: Word; const Len: Cardinal);
+var RawTemp: RawByteString;
+label SetData;
+begin
+  InternalClear;
+  if Buffer <> nil then
+  begin
+    if CodePage = zCP_NONE then
+    begin
+      if Len mod 2 = 0 then //could be UTF16
+      begin
+        RawTemp := GetValidatedAnsiStringFromBuffer(Buffer, Len, FConSettings);
+        InternalSetRawByteString(RawTemp, FConSettings^.ClientCodePage^.CP);
+      end
+      else //can't be UCS2
+      begin
+        case ZEncoding.ZDetectUTF8Encoding(Buffer, Len) of
+          etUSASCII: CodePage := FConSettings^.ClientCodePage^.CP;
+          etUTF8: CodePage := zCP_UTF8;
+          else
+            if zCompatibleCodePages(FConSettings^.ClientCodePage^.CP, zCP_UTF8) then
+              if ZCompatibleCodePages(FConSettings^.CTRL_CP, zCP_UTF8) then
+                CodePage := zDefaultSystemCodePage
+              else
+                CodePage := FConSettings^.CTRL_CP
+            else
+              CodePage := FConSettings^.ClientCodePage^.CP;
+        end;
+        goto SetData;
+      end;
+    end
+    else
+    begin
+SetData:
+      FBlobSize := Len +1;
+      FCurrentCodePage := CodePage;
+      GetMem(FBlobData, FBlobSize);
+      System.Move(Buffer^, FBlobData^, FBlobSize-1);
+      (PAnsiChar(FBlobData)+Len)^ := #0; //set leading terminator
+    end;
+  end;
+end;
+
+procedure TZAbstractCLob.InternalSetPWideChar(const Buffer: PWideChar; const Len: Cardinal);
+begin
+  if Buffer = nil then
+    Clear
+  else
+  begin
+    FBlobSize := (Len +1) shl 1; //shl 1 = * 2 but faster
+    FCurrentCodePage := zCP_UTF16;
+    ReallocMem(FBlobData, FBlobSize);
+    System.Move(Buffer^, FBlobData^, FBlobSize-2);
+    (PWideChar(FBlobData)+Len)^ := WideChar(#0); //set leading terminator
+  end;
+end;
+
+constructor TZAbstractCLob.CreateWithStream(Stream: TStream; const CodePage: Word;
+  const ConSettings: PZConSettings);
+begin
+  inherited Create;
+  FBlobData := nil;
+  FCurrentCodePage := CodePage;
+  FConSettings := ConSettings;
+  if Stream = nil then
+    FBlobSize := -1
+  else
+    if (CodePage = zCP_UTF16) or (CodePage = zCP_UTF16BE) then
+      InternalSetPWidechar(TMemoryStream(Stream).Memory, Stream.Size shr 1)
+    else
+      InternalSetPAnsiChar(TMemoryStream(Stream).Memory, CodePage, Stream.Size);
+  FUpdated := False;
+end;
+
+constructor TZAbstractCLob.CreateWithData(Data: PAnsiChar; const Len: Cardinal;
+  const CodePage: Word; const ConSettings: PZConSettings);
+begin
+  inherited Create;
+  FBlobData := nil;
+  FCurrentCodePage := CodePage;
+  FConSettings := ConSettings;
+  if Data = nil then
+    FBlobSize := -1
+  else
+    InternalSetPAnsiChar(Data, CodePage, Len);
+  FUpdated := False;
+end;
+
+constructor TZAbstractCLob.CreateWithData(Data: PWideChar; const Len: Cardinal;
+  const ConSettings: PZConSettings);
+begin
+  inherited Create;
+  FBlobData := nil;
+  FBlobSize := Len;
+  FCurrentCodePage := zCP_UTF16;
+  FConSettings := ConSettings;
+  if Data <> nil then
+  begin
+    FBlobSize := (Len+1) shl 1; //shl 1 = * 2 but faster, include #0#0 terminator
+    GetMem(FBlobData, FBlobSize);
+    System.Move(Data^, FBlobData^, FBlobSize);
+    (PWideChar(FBlobData)+Len)^ := WideChar(#0);
+  end
+  else
+    FBlobSize := 0;
+  FUpdated := False;
+end;
+
+function TZAbstractCLob.Length: Integer;
+begin
+  if FBlobSize < 1 then
+    Result := 0
+  else
+    if ( FCurrentCodePage = zCP_UTF16 ) or
+       ( FCurrentCodePage = zCP_UTF16BE ) then
+      Result := FBlobSize -2
+    else
+      Result := FBlobSize -1;
+
+end;
+
+function TZAbstractCLob.GetString: RawByteString;
+begin
+  Result := GetRawByteString;
+end;
+
+{**
+  Gets the string from the stored data.
+  @return a RawByteString which contains the stored data - client encoded.
+}
+function TZAbstractCLob.GetRawByteString: RawByteString;
+var
+  WS: ZWideString; //possible WideString which is COM based -> localize it
+begin
+  Result := '';
+  if FBlobSize > 0 then
+    if ZCompatibleCodePages(FCurrentCodePage, FConSettings^.ClientCodePage^.CP) then
+      ZSetString(FBlobData, FBlobSize-1, Result)
+    else
+    begin
+      if ( FCurrentCodePage = zCP_UTF16 ) or
+         ( FCurrentCodePage = zCP_UTF16BE ) then
+        Result := PUnicodeToRaw(FBlobData, (FBlobSize shr 1) -1, FConSettings^.ClientCodePage^.CP)
+      else
+      begin
+        WS := PRawToUnicode(FBlobData, FBlobSize-1, FCurrentCodePage);
+        Result := ZUnicodeToRaw(WS, FConSettings^.ClientCodePage^.CP);
+      end;
+      InternalSetRawByteString(Result, FConSettings^.ClientCodePage^.CP);
+    end;
+end;
+
+procedure TZAbstractCLob.SetRawByteString(Const Value: RawByteString; const CodePage: Word);
+begin
+  InternalSetRawByteString(Value, CodePage);
+  FUpdated := True;
+end;
+
+function TZAbstractCLob.GetAnsiString: AnsiString;
+var
+  UniTemp: ZWideString;
+begin
+  Result := '';
+  if FBlobSize > 0 then
+    if ZCompatibleCodePages(FCurrentCodePage, ZDefaultSystemCodePage) then
+       System.SetString(Result, PAnsiChar(FBlobData), FBlobSize -1)
+    else
+    begin
+      if ( FCurrentCodePage = zCP_UTF16 ) or
+         ( FCurrentCodePage = zCP_UTF16BE ) then
+        System.SetString(UniTemp, PWidechar(FBlobData), (FBlobSize shr 1) -1)
+      else
+        UniTemp := PRawToUnicode(FBlobData, FBlobSize-1, FCurrentCodePage); //localize possible COM based WideString to prevent overflow
+      Result := AnsiString(UniTemp);
+      InternalSetAnsiString(Result);
+    end;
+end;
+
+procedure TZAbstractCLob.SetAnsiString(Const Value: AnsiString);
+begin
+  InternalSetAnsiString(Value);
+  FUpdated := True;
+end;
+
+function TZAbstractCLob.GetUTF8String: UTF8String;
+var
+  Uni: ZWideString;
+begin
+  Result := '';
+  if FBlobSize > 0 then
+    if ZCompatibleCodePages(FCurrentCodePage, zCP_UTF8) then
+      Result := PAnsiChar(FBlobData)
+    else
+    begin
+      if ( FCurrentCodePage = zCP_UTF16 ) or
+         ( FCurrentCodePage = zCP_UTF16BE ) then
+      begin
+        System.SetString(Uni, PWidechar(FBlobData), (FBlobSize shr 1) -1);
+        {$IFDEF WITH_RAWBYTESTRING}
+        Result := UTF8String(Uni)
+        {$ELSE}
+        Result := UTF8Encode(Uni)
+        {$ENDIF}
+      end
+      else
+      begin
+        Uni := PRawToUnicode(FBlobData, FBlobSize-1, FCurrentCodePage);
+        {$IFDEF WITH_RAWBYTESTRING}
+        Result := UTF8String(Uni);
+        {$ELSE}
+        Result := UTF8Encode(Uni);
+        {$ENDIF}
+      end;
+      InternalSetUTF8String(Result);
+    end;
+end;
+
+procedure TZAbstractCLob.SetUnicodeString(Const Value: ZWideString);
+begin
+  InternalSetUnicodeString(Value);
+  FUpdated := True;
+end;
+
+function TZAbstractCLob.GetUnicodeString: ZWideString;
+begin
+  Result := '';
+  if FBlobSize > 0 then
+    if (FCurrentCodePage = zCP_UTF16) or
+       (FCurrentCodePage = zCP_UTF16BE) then
+    begin
+      SetLength(Result, (FBlobSize shr 1) -1);
+      System.Move(FBlobData^, PWideChar(Result)^, FBlobSize - 2);
+    end
+    else
+    begin
+      Result := PRawToUnicode(FBlobData, FBlobSize -1, FCurrentCodePage);
+      InternalSetUnicodeString(Result);
+    end;
+end;
+
+procedure TZAbstractCLob.SetUTF8String(Const Value: UTF8String);
+begin
+  InternalSetUTF8String(Value);
+  FUpdated := True;
+end;
+
+{**
+  Gets the associated stream object.
+  @return an associated or newly created stream object.
+}
+function TZAbstractCLob.GetStream: TStream;
+begin
+  Result := TMemoryStream.Create;
+  if (FBlobSize > 0) and Assigned(FBlobData) then
+  begin
+    if FConSettings^.AutoEncode then
+      GetPAnsiChar(FConSettings^.CTRL_CP)
+    else
+      GetPAnsiChar(FConSettings^.ClientCodePage^.CP);
+    Result.Size := Length;
+    System.Move(FBlobData^, TMemoryStream(Result).Memory^, Length)
+  end;
+end;
+
+procedure TZAbstractCLob.SetStream(const Value: TStream);
+begin
+  SetStream(Value, zCP_NONE); //because we don't know the codepage here
+end;
+
+procedure TZAbstractCLob.SetStream(const Value: TStream; const CodePage: Word);
+begin
+  if Value = nil then
+    InternalClear
+  else
+  begin
+    if (CodePage = zCP_UTF16) or (CodePage = zCP_UTF16BE) then
+      SetPWideChar(TMemoryStream(Value).Memory, Value.Size shr 1)
+    else
+      SetPAnsiChar(TMemoryStream(Value).Memory, CodePage, Value.Size)
+  end;
+  FUpdated := True;
+end;
+
+function TZAbstractCLob.GetRawByteStream: TStream;
+var Tmp: RawByteString;
+begin
+  Result := TMemoryStream.Create;
+  if (FBlobSize > 0) and Assigned(FBlobData) then
+  begin
+    if ZCompatibleCodePages(FCurrentCodePage, FConSettings^.ClientCodePage^.CP) then
+    begin
+      Result.Size := FBlobSize-1;
+      System.Move(FBlobData^, TMemoryStream(Result).Memory^, FBlobSize-1)
+    end
+    else
+    begin
+      Tmp := GetRawByteString;
+      Result.Size := Length;
+      System.Move(Tmp[1], TMemoryStream(Result).Memory^, Length)
+    end;
+  end;
+  Result.Position := 0;
+end;
+
+function TZAbstractCLob.GetAnsiStream: TStream;
+begin
+  Result := TMemoryStream.Create;
+  if (FBlobSize > 0) and Assigned(FBlobData) then
+  begin
+    if ZCompatibleCodePages(FCurrentCodePage, ZDefaultSystemCodePage) then
+    begin
+      Result.Size := Length;
+      System.Move(FBlobData^, TMemoryStream(Result).Memory^, Length)
+    end
+    else
+    begin
+      GetAnsiString; //does the required conversion
+      Result.Size := Length;
+      System.Move(FBlobData^, TMemoryStream(Result).Memory^, Length)
+    end;
+  end;
+  Result.Position := 0;
+end;
+
+function TZAbstractCLob.GetUTF8Stream: TStream;
+begin
+  Result := TMemoryStream.Create;
+  if (FBlobSize > 0) and Assigned(FBlobData) then
+  begin
+    if ZCompatibleCodePages(FCurrentCodePage, zCP_UTF8) then
+    begin
+      Result.Size := FBlobSize -1;
+      System.Move(FBlobData^, TMemoryStream(Result).Memory^, FBlobSize -1)
+    end
+    else
+    begin
+      GetUTF8String;
+      Result.Size := Length;
+      System.Move(FBlobData, TMemoryStream(Result).Memory^, FBlobSize -1)
+    end;
+  end;
+  Result.Position := 0;
+end;
+
+function TZAbstractCLob.GetUnicodeStream: TStream;
+begin
+  Result := TMemoryStream.Create;
+  if (FBlobSize > 0) and Assigned(FBlobData) then
+  begin
+    if (FCurrentCodePage = zCP_UTF16) or
+       (FCurrentCodePage = zCP_UTF16) then
+    begin
+      Result.Size := FBlobSize -2;
+      System.Move(FBlobData^, TMemoryStream(Result).Memory^, FBlobSize-2)
+    end
+    else
+    begin
+      GetUnicodeString;
+      Result.Size := FBlobSize-2;
+      System.Move(FBlobData^, TMemoryStream(Result).Memory^, FBlobSize-2)
+    end;
+  end;
+  Result.Position := 0;
+end;
+
+function TZAbstractCLob.GetPAnsiChar(const CodePage: Word): PAnsiChar;
+var
+  TempRaw: RawByteString;
+  WS: ZWideString;
+begin
+  if FBlobData = nil then
+    Result := nil
+  else
+    if ZCompatibleCodePages(FCurrentCodePage, CodePage) then
+      Result := FBlobData
+    else
+    begin
+      if (FCurrentCodePage = zCP_UTF16) or
+         (FCurrentCodePage = zCP_UTF16BE) then
+        TempRaw := PUnicodeToRaw(FBlobData, (FBlobSize shr 1) -1, CodePage)
+      else
+      begin
+        WS := PRawToUnicode(FBlobData, FBlobSize -1, FCurrentCodePage);
+        TempRaw := ZUniCodeToRaw(WS, CodePage);
+      end;
+      InternalSetRawByteString(TempRaw, CodePage);
+      Result := PAnsiChar(FBlobData);
+    end;
+end;
+
+procedure TZAbstractCLob.SetPAnsiChar(const Buffer: PAnsiChar;
+  const CodePage: Word; const Len: Cardinal);
+begin
+  InternalSetPAnsiChar(Buffer, CodePage, Len);
+  FUpdated := True;
+end;
+
+function TZAbstractCLob.GetPWideChar: PWideChar;
+begin
+  if FBlobData = nil then
+    Result := nil
+  else
+    if (FCurrentCodePage = zCP_UTF16) or
+       (FCurrentCodePage = zCP_UTF16BE) then
+      Result := PWideChar(FBlobData)
+    else
+    begin
+      GetUnicodeString;
+      Result := PWideChar(FBlobData);
+    end;
+end;
+
+procedure TZAbstractCLob.SetPWideChar(const Buffer: PWideChar; const Len: Cardinal);
+begin
+  InternalSetPWideChar(Buffer, Len);
+  FUpdated := True;
+end;
+
+{$IFDEF WITH_MM_CAN_REALLOC_EXTERNAL_MEM}
+procedure TZAbstractCLob.SetBlobData(const Buffer: Pointer; const Len: Cardinal;
+  const CodePage: Word);
+begin
+  if Buffer <> FBlobData then
+    InternalClear;
+  FBlobData := Buffer;
+  FBlobSize := Len;
+  FCurrentCodePage := CodePage;
+  FUpdated := True;
+end;
+{$ENDIF}
+
+{**
+  Clones this blob object.
+  @return a clonned blob object.
+}
+function TZAbstractCLob.Clone(Empty: Boolean = False): IZBLob;
+begin
+  if (FCurrentCodePage = zCP_UTF16) or
+     (FCurrentCodePage = zCP_UTF16BE) then
+    if Empty then
+      Result := TZAbstractCLob.CreateWithData(nil, 0, FConSettings)
+    else
+      Result := TZAbstractCLob.CreateWithData(FBlobData, (FBlobSize shr 1)-1, FConSettings)
+  else
+    if Empty then
+      Result := TZAbstractCLob.CreateWithData(nil, 0, FCurrentCodePage, FConSettings)
+    else
+      Result := TZAbstractCLob.CreateWithData(FBlobData, FBlobSize-1, FCurrentCodePage, FConSettings);
+end;
+
+function TZAbstractCLob.IsClob: Boolean;
+begin
+  Result := True;
+end;
+
+{ TZAbstractUnCachedCLob }
+
+procedure TZAbstractUnCachedCLob.ReadLob;
+begin
+  FLoaded := True;
+end;
+
+procedure TZAbstractUnCachedCLob.WriteLob;
+begin
+end;
+
+function TZAbstractUnCachedCLob.Length: Integer;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited Length;
+end;
+
+{**
+  Checks if this blob has an empty content.
+  @return <code>True</code> if this blob is empty.
+}
+function TZAbstractUnCachedCLob.IsEmpty: Boolean;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited IsEmpty;
+end;
+
+{**
+  Gets the string from the stored data.
+  @return a RawByteString which contains the stored data - client encoded.
+}
+function TZAbstractUnCachedCLob.GetRawByteString: RawByteString;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetRawByteString;
+end;
+
+function TZAbstractUnCachedCLob.GetAnsiString: AnsiString;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetAnsiString;
+end;
+
+function TZAbstractUnCachedCLob.GetUTF8String: UTF8String;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetUTF8String;
+end;
+
+function TZAbstractUnCachedCLob.GetUnicodeString: ZWideString;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetUnicodeString;
+end;
+
+{**
+  Gets the associated stream object.
+  @return an associated or newly created stream object.
+}
+function TZAbstractUnCachedCLob.GetStream: TStream;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetStream;
+end;
+
+function TZAbstractUnCachedCLob.GetRawByteStream: TStream;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetRawByteStream;
+end;
+
+function TZAbstractUnCachedCLob.GetAnsiStream: TStream;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetAnsiStream;
+end;
+
+function TZAbstractUnCachedCLob.GetUTF8Stream: TStream;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetUTF8Stream;
+end;
+
+function TZAbstractUnCachedCLob.GetUnicodeStream: TStream;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetUnicodeStream;
+end;
+
+function TZAbstractUnCachedCLob.GetPAnsiChar(const CodePage: Word): PAnsiChar;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetPAnsiChar(CodePage);
+end;
+
+function TZAbstractUnCachedCLob.GetPWideChar: PWideChar;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetPWideChar;
+end;
+
+function TZAbstractUnCachedCLob.GetBuffer: Pointer;
+begin
+  if not Loaded then ReadLob;
+  Result := inherited GetBuffer;
+end;
+
+{**
+  Clones this blob object.
+  @return a clonned blob object.
+}
+function TZAbstractUnCachedCLob.Clone(Empty: Boolean = False): IZBLob;
+begin
+  if not Empty and not Loaded then ReadLob;
+  Result := inherited Clone(Empty);
 end;
 
 end.

@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -57,7 +55,8 @@ interface
 
 {$I ZCore.inc}
 
-uses SysUtils, Classes, ZClasses, ZCompatibility, ZVariant, ZTokenizer, ZExprParser;
+uses SysUtils, Classes, {$IFDEF WITH_TOBJECTLIST_INLINE}System.Contnrs, {$ENDIF}
+  ZClasses, ZCompatibility, ZVariant, ZTokenizer, ZExprParser;
 
 type
   {** Defines an expression exception. }
@@ -312,7 +311,7 @@ begin
     Inc(FCapacity, 64);
     SetLength(FValues, FCapacity);
   end;
-  DefVarManager.Assign(Value, FValues[FCount]);
+  SoftVarManager.Assign(Value, FValues[FCount]);
   Inc(FCount);
 end;
 
@@ -577,11 +576,11 @@ begin
         Stack.Push(Current.Value);
 {      ttVariable:
         begin
-          Index := Variables.FindByName(DefVarManager.GetAsString(Current.Value));
+          Index := Variables.FindByName(SoftVarManager.GetAsString(Current.Value));
           if Index < 0 then
           begin
             raise TZExpressionError.Create(
-              Format(SVariableWasNotFound, [DefVarManager.GetAsString(Current.Value)]));
+              Format(SVariableWasNotFound, [SoftVarManager.GetAsString(Current.Value)]));
           end;
           Value1 := Variables.Values[Index];
           Stack.Push(Value1)
@@ -606,14 +605,14 @@ begin
         end;
 {      ttFunction:
         begin
-          Index := Functions.FindByName(DefVarManager.GetAsString(Current.Value));
+          Index := Functions.FindByName(SoftVarManager.GetAsString(Current.Value));
           if Index < 0 then
           begin
             raise TZExpressionError.Create(
-              Format(SFunctionWasNotFound, [DefVarManager.GetAsString(Current.Value)]));
+              Format(SFunctionWasNotFound, [SoftVarManager.GetAsString(Current.Value)]));
           end;
           Value1 := Functions.Functions[Index].Execute(Stack, FVariantManager);
-          ParamsCount := DefVarManager.GetAsInteger(Stack.Pop);
+          ParamsCount := SoftVarManager.GetAsInteger(Stack.Pop);
           while ParamsCount > 0 do
           begin
             Stack.Pop;
@@ -636,7 +635,7 @@ begin
           if Current.Value.VType = vtInterface then
           begin
             Value1 := IZFunction(Current.Value.VInterface).Execute(Stack, FVariantManager);
-            ParamsCount := DefVarManager.GetAsInteger(Stack.Pop);
+            ParamsCount := SoftVarManager.GetAsInteger(Stack.Pop);
             Stack.DecStackPointer(ParamsCount);
             Stack.Push(Value1);
           end

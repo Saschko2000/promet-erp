@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -59,43 +57,95 @@ interface
 
 uses
   Variants,
-{$IFDEF UNIX}
-  {$IFDEF FPC}
+{$IFDEF FPC}
+  {$IFDEF UNIX}
     dynlibs,
   {$endif}
 {$ENDIF}
-  {$IFDEF WITH_WIDESTRUTILS}
-  WideStrUtils,
-  {$ENDIF}
-  {$IFDEF MSWINDOWS}
+  {$If defined(MSWINDOWS) and not defined(FPC)}
   Windows,
-  {$ENDIF}
-  {$IFDEF FPC}
-    Types,
-  {$endif}
-  Classes, SysUtils;
+  {$IFEND}
+  Classes,
+  {$IFDEF MSEgui}mclasses,{$ENDIF}
+  {$IFDEF WITH_LCONVENCODING} LConvEncoding,{$ENDIF}
+  Types,
+  SysUtils;
 
 type
+  {$IF not declared(UInt64)}
+  UInt64                = QWord;
+  {$IFEND}
+  {$IF not declared(PUInt64)}
+  PUInt64               = {$IFDEF FPC}PQWord{$ELSE}^UInt64{$ENDIF};
+  {$IFEND}
+  {$IF not declared(PPLongWord)}
+  PPLongWord            = ^PLongWord;
+  {$IFEND}
 {$IFDEF FPC}
-  ULong                 = {$IFDEF WIN64}LongWord{$ELSE}PTRUINT{$ENDIF};
-                            // EgonHugeist: Use always a 4Byte Integer as long the PlainDriver dll's are 32Bit for Windows64
-                            //on the other hand MySQL64 and FB64 have problems on Win64!
-  ULongLong             = QWord;
+  {$IF not declared(NativeInt)} //since FPC2.7 this type is declared too avoid inconsitent builds
   NativeInt             = PtrInt;
+  {$IFEND}
+  {$IF not declared(NativeUInt)} //since FPC2.7 this type is declared too avoid inconsitent builds
   NativeUInt            = PtrUInt;
+  {$IFEND}
+  {$IF not declared(PNativeUInt)} //since FPC2.7 this type is declared too avoid inconsitent builds
+  PNativeUInt           = ^NativeUInt;
+  {$IFEND}
 {$ELSE}
-  {$IFNDEF DELPHI16_UP}
+  {$IFNDEF HAVE_TRUE_NATIVE_TYPES}  //introduced since D2007 but "stable" since XE2
   NativeInt             = Integer;
   NativeUInt            = LongWord;
+  PNativeUInt           = ^NativeUInt;
+  PWord                 = ^Word; // M.A.
   {$ENDIF}
-  ULong                 = LongWord;
-  ULongLong             = Int64; //delphi don´t have Unsigned Int64 type
 {$ENDIF}
+  // EgonHugeist: Use always a 4Byte unsigned Integer for Windows otherwise MySQL64 has problems on Win64!
+  // don't know anything about reported issues on other OS's
+  ULong                 = {$IFDEF WIN64}LongWord{$ELSE}NativeUInt{$ENDIF};
+  ULongLong             = UInt64;
   PULong                = ^ULong;
   PULongLong            = ^ULongLong;
 
   UInt                  = LongWord;
   PUInt                 = ^UInt;
+  ZPPWideChar           = ^PWideChar;//BCB issue: PPWideChar is not part of system
+
+  {EH: just a clear type/IDE to get the length of String reading back from
+    initial entry(X) - SizeOf(LengthInt) = Length}
+
+  PLengthInt            = ^LengthInt;
+  LengthInt             = {$IFDEF FPC}SizeInt{$ELSE}LongInt{$ENDIF};
+  PRefCntInt            = ^RefCntInt;
+  RefCntInt             = {$IFDEF FPC}SizeInt{$ELSE}LongInt{$ENDIF};
+  {EH: just two types for determination DynArray Length if ever something changes we just need a define here.}
+  ArrayLenInt           = NativeInt;
+  PArrayLenInt          = ^ArrayLenInt;
+
+const
+  {$IFDEF FPC}
+  { ustrings.inc/astrings.inc:
+  ....
+  @-8  : SizeInt for reference count;
+  @-4  : SizeInt for size;
+  @    : String + Terminating #0;
+  .... }
+  StringLenOffSet             = SizeOf(SizeInt){PAnsiRec/PUnicodeRec.Len};
+  StringRefCntOffSet          = SizeOf(SizeInt){PAnsiRec/PUnicodeRec.Ref}+SizeOf(SizeInt){PAnsiRec/PUnicodeRec.Len};
+  {$ELSE} //system.pas
+  StringLenOffSet             = SizeOf(LongInt); {PStrRec.Len}
+  StringRefCntOffSet          = SizeOf(LongInt){PStrRec.RefCnt}+SizeOf(LongInt){PStrRec.Len};
+  {$ENDIF}
+  ArrayLenOffSet              = SizeOf(ArrayLenInt);
+type
+  TZCharRec = Record
+    Len: Cardinal; //Length of String
+    P: Pointer;    //Allocated Mem of String including #0 terminator
+    CP: Word;      //CodePage of the String
+  end;
+
+  {$IFNDEF HAVE_TBYTES}
+  TBytes = TByteDynArray;
+  {$ENDIF}
 
   TObjectDynArray       = array of TObject;
 
@@ -123,13 +173,12 @@ const
   Brackets = ['(',')','[',']','{','}'];
   StdWordDelims = [#0..' ',',','.',';','/','\',':','''','"','`'] + Brackets;
 
-function Hash(S : AnsiString) : LongWord;
 function AnsiProperCase(const S: string; const WordDelims: TSysCharSet): string;
 
 {$ENDIF}
 
 {$IFDEF WINDOWS}
-	const SharedSuffix='.dll';
+const SharedSuffix='.dll';
 {$ELSE}
   {$IFDEF DARWIN}
   const SharedSuffix='.dylib';
@@ -159,570 +208,328 @@ function GetProcAddress(Module: HMODULE; Proc: PChar): Pointer;
 
 {EgonHugeist:}
 type
-  ZAnsiString = {$IFDEF DELPHI12_UP}RawByteString{$ELSE}AnsiString{$ENDIF};
+  {$IFNDEF WITH_RAWBYTESTRING}
+  RawByteString = AnsiString;
+  {$ENDIF}
+
+  ZWideString = {$IFDEF PWIDECHAR_IS_PUNICODECHAR}UnicodeString{$ELSE}WideString{$ENDIF};
+
+  {$IF not declared(TBooleanDynArray)}
+  TBooleanDynArray        = array of Boolean;
+  {$IFEND}
+  {$IF not declared(TByteDynArray)}
+  TByteDynArray           = array of Byte;
+  {$IFEND}
+  {$IF not declared(TShortIntDynArray)}
+  TShortIntDynArray       = array of ShortInt;
+  {$IFEND}
+  {$IF not declared(TWordDynArray)}
+  TWordDynArray           = array of Word;
+  {$IFEND}
+  {$IF not declared(TSmallIntDynArray)}
+  TSmallIntDynArray       = array of SmallInt;
+  {$IFEND}
+  {$IF not declared(TLongWordDynArray)}
+  TLongWordDynArray       = array of LongWord;
+  {$IFEND}
+  {$IF not declared(TIntegerDynArray)}
+  TIntegerDynArray        = array of LongInt;
+  {$IFEND}
+  {$IF not declared(TCardinalDynArray)}
+  TCardinalDynArray       = array of Cardinal;
+  {$IFEND}
+  {$IF not declared(TUInt64DynArray)}
+  TUInt64DynArray         = array of UInt64;
+  {$IFEND}
+  {$IF not declared(TInt64DynArray)}
+  TInt64DynArray          = array of Int64;
+  {$IFEND}
+  {$IF not declared(TSingleDynArray)}
+  TSingleDynArray         = array of Single;
+  {$IFEND}
+  {$IF not declared(TDoubleDynArray)}
+  TDoubleDynArray         = array of Double;
+  {$IFEND}
+  {$IF not declared(TCurrencyDynArray)}
+  TCurrencyDynArray       = array of Currency;
+  {$IFEND}
+  {$IF not declared(TExtendedDynArray)}
+  TExtendedDynArray       = array of Extended;
+  {$IFEND}
+  {$IF not declared(TDateTimeDynArray)}
+  TDateTimeDynArray       = array of TDateTime;
+  {$IFEND}
+  {$IF not declared(TUTF8StringDynArray)}
+  TUTF8StringDynArray     = array of UTF8String;
+  {$IFEND}
+  {$IF not declared(TAnsiStringDynArray)}
+  TAnsiStringDynArray     = array of AnsiString;
+  {$IFEND}
+  {$IF not declared(TRawByteStringDynArray)}
+  TRawByteStringDynArray  = array of RawByteString;
+  {$IFEND}
+  {$IF not declared(TUnicodeStringDynArray)}
+  TUnicodeStringDynArray  = array of ZWideString;
+  {$IFEND}
+  {$IF not declared(TStringDynArray)}
+  TStringDynArray  = array of String;
+  {$IFEND}
+  {$IF not declared(TBytesDynArray)}
+  TBytesDynArray  = array of TBytes;
+  {$IFEND}
+  {$IF not declared(TInterfaceDynArray)}
+  TInterfaceDynArray  = array of IInterface;
+  {$IFEND}
+  {$IF not declared(TGUIDDynArray)}
+  TGUIDDynArray  = array of TGUID;
+  {$IFEND}
+  {$IF not declared(TPointerDynArray)}
+  TPointerDynArray  = array of Pointer;
+  {$IFEND}
+  TZCharRecDynArray = array of TZCharRec;
+type
+  {declare move or converter functions for the String Types}
+  TPRawToUTF8 = function(const Src: PAnsiChar; Len: NativeUInt; const RawCP: Word): UTF8String;
+  TZAnsiToRaw = function (const Src: AnsiString; const RawCP: Word): RawByteString;
+  TZRawToAnsi = function (const Src: RawByteString; const RawCP: Word): AnsiString;
+  TZAnsiToUTF8 = function (const Src: AnsiString): UTF8String;
+  TZUTF8ToAnsi = function (const Src: UTF8String): AnsiString;
+  TZRawToUTF8 = function (const Src: RawByteString; const CP: Word): UTF8String;
+  TZUTF8ToRaw = function (const Src: UTF8String; const CP: Word): RawByteString;
+  TZRawToString = function (const Src: RawByteString; const RawCP, StringCP: Word): String;
+  TZStringToRaw = function (const Src: String; const StringCP, RawCP: Word): RawByteString;
+  TZUTF8ToString = function (const Src: UTF8String; const StringCP: Word): String;
+  TZStringToUTF8 = function (const Src: String; const StringCP: Word): UTF8String;
+  TZAnsiToString = function (const Src: AnsiString; const StringCP: Word): String;
+  TZStringToAnsi = function (const Src: String; const StringCP: Word): AnsiString;
+  TZRawToUnicode = function (const S: RawByteString; const CP: Word): ZWideString;
+  TZUnicodeToRaw = function (const US: ZWideString; CP: Word): RawByteString;
+  TZUnicodeToString = function (const Src: ZWideString; const StringCP: Word): String;
+  TZStringToUnicode = function (const Src: String; const StringCP: Word): ZWideString;
+  TPRawToString = function (const Src: PAnsiChar; Len: LengthInt; const StringCP: Word): String;
+  TPUnicodeToString = function (const Src: PWideChar; CodePoints: NativeUInt; const StringCP: Word): String;
+
+  {** Defines the Target Ansi codepages for the Controls }
+  TZControlsCodePage = ({$IFDEF UNICODE}cCP_UTF16, cCP_UTF8, cGET_ACP{$ELSE}{$IFDEF FPC}cCP_UTF8, cCP_UTF16, cGET_ACP{$ELSE}cGET_ACP, cCP_UTF8, cCP_UTF16{$ENDIF}{$ENDIF});
 
   TZCharEncoding = (
-    ceDefault, //Internal switch for the two Functions below do not use it as a CodePage-decaration!
-    ceAnsi, //Base Ansi-String: prefered CodePage
-    ceUTF8, //UTF8_Unicode: 1-4Byte/Char
-    {$IFNDEF WITH_WIDECONTROLS}
-    ceUTF8AsAnsi,
-    {$ENDIF}
-    ceUTF16, ceUTF32);
+    ceDefault,  //Internal switch for the two Functions below do not use it as a CodePage-declaration!
+    ceAnsi,     //Base Ansi-String: prefered CodePage
+    ceUTF8,     //UTF8_Unicode: 1-4Byte/Char
+    ceUTF16,    //Wide or Unicode string encoding for Field-mapping
+    ceUTF32);   //reserved
 
     {Here it's possible to add some more, to handle the Ansi->Unicode-Translations}
 
-  TZCodePage = {packed to slow..} record
-    Name: String; //Name of Client-CharacterSet
-    ID:  Integer; {may be an ordinal value of predefined Types or the database used id}
-    CharWidth: Integer; {count of Bytes per char}
-    Encoding: TZCharEncoding; //The Type of String-Translation handling
-    {$IFDEF WITH_CHAR_CONTROL} CP:  Word; {$ENDIF} //The CodePage the AnsiString must have to
-    ZAlias: String; //A possible (saver?) CharacterSet which is more Zeos compatible...
-                    //If it's empty it will be ignored!!!
-    IsSupported: Boolean;
-  end;
   PZCodePage = ^TZCodePage;
+  TZCodePage = record
+    Name: String;             //Name of Client-CharacterSet
+    ID:  Integer;             //may be an ordinal value of predefined Types or the database used id}
+    CharWidth: Integer;       //count of Bytes per char
+    Encoding: TZCharEncoding; //The Type of String-Translation handling
+    CP:  Word;                //The CodePage the AnsiString must have to
+    ZAlias: String;           //A possible (saver?) CharacterSet which is more Zeos compatible... If it's empty it will be ignored!!!
+    IsStringFieldCPConsistent: Boolean; //Is the current client characterset codepage consistent for all codepages?
+  end;
+
+  TConvertEncodingFunctions = record
+    ZAnsiToUTF8: TZAnsiToUTF8;
+    ZUTF8ToAnsi: TZUTF8ToAnsi;
+    ZUTF8ToString: TZUTF8ToString;
+    ZStringToUTF8: TZStringToUTF8;
+    ZAnsiToRaw: TZAnsiToRaw;
+    ZRawToAnsi: TZRawToAnsi;
+    ZRawToUTF8: TZRawToUTF8;
+    ZUTF8ToRaw: TZUTF8ToRaw;
+    ZStringToRaw: TZStringToRaw;
+    ZRawToString: TZRawToString;
+    ZAnsiToString: TZAnsiToString;
+    ZStringToAnsi: TZStringToAnsi;
+    ZUnicodeToRaw: TZUnicodeToRaw;
+    ZRawToUnicode: TZRawToUnicode;
+    ZUnicodeToString: TZUnicodeToString;
+    ZStringToUnicode: TZStringToUnicode;
+    ZPRawToString: TPRawToString;
+    ZPUnicodeToString: TPUnicodeToString;
+    ZPRawToUTF8: TPRawToUTF8;
+  end;
+
+  TZFormatSettings = Record
+    DateFormat: RawByteString;
+    DateFormatLen: Cardinal;
+    TimeFormat: RawByteString;
+    TimeFormatLen: Cardinal;
+    DateTimeFormat: RawByteString;
+    DateTimeFormatLen: Cardinal;
+  End;
+
+  PZConSettings = ^TZConSettings;
+  TZConSettings = record
+    AutoEncode: Boolean;        //Check Encoding and or convert string with FromCP ToCP
+    CPType: TZControlsCodePage; //the CP-Settings type the controls do expect
+    CTRL_CP: Word;              //Target CP of string conversion (CP_ACP/CP_UPF8)
+    ConvFuncs: TConvertEncodingFunctions; //a rec for the Convert functions used by the objects
+    ClientCodePage: PZCodePage; //The codepage informations of the current characterset
+    DisplayFormatSettings: TZFormatSettings;
+    ReadFormatSettings: TZFormatSettings;
+    WriteFormatSettings: TZFormatSettings;
+    {$IFDEF WITH_LCONVENCODING}
+    PlainConvertFunc: TConvertEncodingFunction;
+    DbcConvertFunc: TConvertEncodingFunction;
+    {$ENDIF}
+    DataBaseSettings: Pointer;
+    Protocol, Database, User: RawByteString;
+  end;
 
   TZCodePagedObject = Class(TInterfacedObject)
   private
-    FCodePage: PZCodePage;
+    FConSettings: PZConSettings;
   protected
-    function ZDbcString(const Ansi: AnsiString; const Encoding: TZCharEncoding = ceDefault): String;
-    function ZPlainString(const AStr: String; const Encoding: TZCharEncoding = ceDefault): ZAnsiString;
-    function ZStringW(const ws: WideString; const Encoding: TZCharEncoding = ceDefault): String;
-    property ClientCodePage: PZCodePage read FCodePage write FCodePage;
-  public
-    destructor Destroy; override;
+    procedure SetConSettingsFromInfo(Info: TStrings);
+    property ConSettings: PZConSettings read FConSettings write FConSettings;
   end;
 
-const
-  ClientCodePageDummy: TZCodepage =
-    (Name: ''; ID: 0; Encoding: ceAnsi; {$IFDEF WITH_CHAR_CONTROL}
-      CP: 0;{$ENDIF} ZAlias: '');
+  {$IFDEF WITH_LCONVENCODING}
+  function NoConvert(const s: string): string;
+  {$ENDIF}
 
-{$IFDEF WITH_CHAR_CONTROL}
-  ZFullMultiByteCodePages: array[0..21] of Word = (50220, 50221, 50222, 50225,
-    50227, 50229, 52936, 54936, 54936, 57002, 57003, 57004, 57005, 57006,
-    57007, 57008, 57009, 57010, 57011, 65000, 65001, 42);
-
-function ZWideToAnsiString(const ws: WideString; CP: Word): AnsiString;
-function ZAnsiToWideString(const s: AnsiString; CP: Word): WideString;
-function ZCPWideString(const ws: WideString; CP: Word): WideString;
-function ZCPCheckedAnsiString(const s: AnsiString; CP: Word): AnsiString;
-function ZCPToAnsiString(const s: AnsiString; CP: Word): AnsiString;
-function ZAnsiStringToCP(const s: AnsiString; CP: Word): AnsiString;
-{$ENDIF}
-
-{$IF not Declared(DetectUTF8Encoding)}
-{$DEFINE ZDetectUTF8Encoding}
-Type
-  TEncodeType = (etUSASCII, etUTF8, etANSI);
-
-function DetectUTF8Encoding(Ansi: AnsiString): TEncodeType;
-{$IFEND}
 
 {$IFNDEF WITH_CHARINSET}
-function CharInSet(C: AnsiChar; const CharSet: TSysCharSet): Boolean; overload;
-function CharInSet(C: WideChar; const CharSet: TSysCharSet): Boolean; overload;
+function CharInSet(const C: AnsiChar; const CharSet: TSysCharSet): Boolean; overload; {$IFDEF WITH_INLINE}Inline;{$ENDIF}
+function CharInSet(const C: WideChar; const CharSet: TSysCharSet): Boolean; overload; {$IFDEF WITH_INLINE}Inline;{$ENDIF}
 {$ENDIF}
 
 {$IF not Declared(UTF8ToString)}
 {$DEFINE ZUTF8ToString}
-function UTF8ToString(const s: AnsiString): WideString;
+function UTF8ToString(const s: RawByteString): ZWideString;
 {$IFEND}
+
+function Hash(const S : RawByteString) : LongWord; overload;
+function Hash(const Key : ZWideString) : Cardinal; overload;
+
+procedure ZSetString(const Src: PAnsiChar; const Len: Cardinal; var Dest: AnsiString); overload;// {$IFDEF WITH_INLINE}Inline;{$ENDIF}
+procedure ZSetString(const Src: PAnsiChar; const Len: Cardinal; var Dest: UTF8String); overload;// {$IFDEF WITH_INLINE}Inline;{$ENDIF}
+procedure ZSetString(Src: PAnsiChar; const Len: LengthInt; var Dest: ZWideString); overload;// {$IFDEF WITH_INLINE}Inline;{$ENDIF}
+{$IFDEF WITH_RAWBYTESTRING}
+procedure ZSetString(const Src: PAnsiChar; const Len: Cardinal; var Dest: RawByteString); overload;// {$IFDEF WITH_INLINE}Inline;{$ENDIF}
+{$ENDIF}
+
+var
+  ClientCodePageDummy: TZCodepage =
+    (Name: ''; ID: 0; CharWidth: 1; Encoding: ceAnsi;
+      CP: $ffff; ZAlias: ''{%H-});
+
+  ConSettingsDummy: TZConSettings =
+    (AutoEncode: False;
+      CPType: {$IFDEF DELPHI}{$IFDEF UNICODE}cCP_UTF16{$ELSE}cGET_ACP{$ENDIF}{$ELSE}cCP_UTF8{$ENDIF};
+      ClientCodePage: {%H-}@ClientCodePageDummy;
+      DisplayFormatSettings:
+        (DateFormat: 'DD-MM-YYYY';
+          DateFormatLen: 10;
+          TimeFormat: 'HH:NN:SS.ZZZ';
+          TimeFormatLen: 12;
+          DateTimeFormat: 'DD-MM-YYYY HH:NN:SS';
+          DateTimeFormatLen: 23);
+      ReadFormatSettings:
+          (DateFormat: 'DD-MM-YYYY';
+          DateFormatLen: 10;
+          TimeFormat: 'HH:NN:SS.ZZZ';
+          TimeFormatLen: 12;
+          DateTimeFormat: 'DD-MM-YYYY HH:NN:SS.ZZZ';
+          DateTimeFormatLen: 23);
+      WriteFormatSettings:
+          (DateFormat: 'DD-MM-YYYY';
+          DateFormatLen: 10;
+          TimeFormat: 'HH:NN:SS.ZZZ';
+          TimeFormatLen: 12;
+          DateTimeFormat: 'DD-MM-YYYY HH:NN:SS.ZZZ';
+          DateTimeFormatLen: 23);
+      {$IFDEF WITH_LCONVENCODING}
+      PlainConvertFunc: @NoConvert;
+      DbcConvertFunc: @NoConvert;
+      {$ENDIF}
+    {%H-});
+
+const
+  PEmptyUnicodeString: PWideChar = '';
+  PEmptyAnsiString: PAnsiChar = '';
+
+var
+  ZDefaultSystemCodePage: Word;
 
 implementation
 
-{$IFDEF ZDetectUTF8Encoding}
-function DetectUTF8Encoding(Ansi: AnsiString): TEncodeType; //EgonHugeist: Detect a valid UTF8Sequence
-var
-  I, Len: Integer;
-  Source: PAnsiChar;
-
-  function P(Pos: Integer = 0): Byte;
-  begin
-    Result := Byte(Source[Pos]);
-  end;
-
-  procedure IncPos(X: Integer = 1);
-  begin
-    inc(Source, X);
-    inc(i, X);
-  end;
+procedure TZCodePagedObject.SetConSettingsFromInfo(Info: TStrings);
 begin
-  Result := etUSASCII;
-  if Ansi = '' then Exit;
-
-  Len := Length(Ansi);
-  Source := PAnsiChar(Ansi);
-
-  // skip US-ASCII Chars they are allways valid.
-  I := 0;
-  while ( I <= Len ) do
+  if Assigned(Info) and Assigned(FConSettings) then
   begin
-    if P >= $80 then break;
-    IncPos;
-  end;
-
-  if i > Len then exit; //US ACII
-
-  //No US-Ascii at all.
-  while I < Len do
-  begin
-    case p of
-      $00..$7F: //Ascii
-        IncPos;
-
-      $C2..$DF: // non-overlong 2-byte
-        if (I+1 < Len)
-            and (P(1) in [$80..$BF]) then
-          IncPos(2)
-        else
-          break;
-
-      $E0: // excluding overlongs
-        if (I+2 < Len)
-            and (P(1) in [$A0..$BF])
-            and (P(2) in [$80..$BF]) then
-          IncPos(3)
-        else
-          break;
-
-      $E1..$EF: // straight 3-byte & excluding surrogates
-        if (i+2 < Len)
-            and (P(1) in [$80..$BF])
-            and (P(2) in [$80..$BF]) then
-          IncPos(3)
-        else
-          break;
-
-      $F0: // planes 1-3
-        if (i+3 < Len)
-            and (P(1) in [$90..$BF])
-            and (P(2) in [$80..$BF])
-            and (P(3) in [$80..$BF]) then
-          IncPos(4)
-        else
-          break;
-
-      $F1..$F3: // planes 4-15
-        if (i+3 < Len)
-            and (P(1) in [$80..$BF])
-            and (P(2) in [$80..$BF])
-            and (P(3) in [$80..$BF]) then
-          IncPos(4)
-        else
-          break;
-
-      $F4: // plane 16
-        if (i+3 < Len)
-            and (P(1) in [$80..$8F])
-            and (P(2) in [$80..$BF])
-            and (P(3) in [$80..$BF]) then
-          IncPos(4)
-        else
-          break;
+    {$IFDEF UNICODE}
+    ConSettings.CTRL_CP := ZDefaultSystemCodePage;
+    if Info.values['controls_cp'] = 'GET_ACP' then
+      ConSettings.CPType := cGET_ACP
     else
-      break;
-    end;
-  end;
-
-  if i = Len then
-    Result := etUTF8  //UTF8
-  else
-    Result := etANSI; //Ansi
-end;
-{$ENDIF}
-
-{$IFDEF WITH_CHAR_CONTROL}
-  function IsFullMultiByteCodePage(CP: Word): Boolean;
-  var
-    I: Integer;
-  begin
-    for i := 0 to High(ZFullMultiByteCodePages) do
-    begin
-      Result := CP = ZFullMultiByteCodePages[i];
-      if Result then Break;
-    end;
-  end;
-  {**
-    Converts Unicode string to Ansi string using specified code page.
-    @param   ws       Unicode string.
-    @param   codePage Code page to be used in conversion.
-    @returns Converted ansi string.
-  }
-
-  function ZWideToAnsiString(const ws: WideString; CP: Word): AnsiString;
-  {$IFNDEF FPC}
-  var
-    {$IFNDEF DELPHI12_UP}
-    l: integer;
+      ConSettings.CPType := cCP_UTF16;
+    ConSettings.AutoEncode := True;
     {$ELSE}
-    AnsiTemp: {$IFDEF DELPHI14_UP}RawByteString{$ELSE}AnsiString{$ENDIF};
-    {$ENDIF}
-  {$ENDIF}
-  begin
-    if ws = '' then
-      Result := ''
+      {$IF defined(MSWINDOWS) or defined(FPC_HAS_BUILTIN_WIDESTR_MANAGER) or defined(WITH_LCONVENCODING)}
+      ConSettings.AutoEncode := Info.Values['AutoEncodeStrings'] = 'ON'; //compatibitity Option for existing Applications;
+      {$ELSE}
+      ConSettings.AutoEncode := False;
+      {$IFEND}
+    if Info.values['controls_cp'] = 'GET_ACP' then
+    begin
+      ConSettings.CPType := cGET_ACP;
+      ConSettings.CTRL_CP := ZDefaultSystemCodePage;
+    end
     else
-      if CP = 65001 then
-        Result := UTF8Encode(WS)
-      else
+      if Info.values['controls_cp'] = 'CP_UTF8' then
       begin
-        {$IFDEF FPC}
-        Result := Result;
-        {$ELSE}
-          {$IFDEF DELPHI12_UP} //use Delphi-RTL cause of possible Marvin-Mode for XE2
-          AnsiTemp := UTF8Encode(ws); //total Char-transport. may be server-unsupported
-          if ( AnsiTemp <> '' ) and ( CP <> $ffff )  then
-            SetCodePage(AnsiTemp, CP, True); //Server-CP supported!
-          Result := AnsiTemp;
-          {$ELSE} //Here we can use faster Delphi-RTL if somebode knows how!
-          if ( CP <> $ffff ) then //EgonHugeist
+        ConSettings.CPType := cCP_UTF8;
+        ConSettings.CTRL_CP := 65001;
+      end
+      else
+        if Info.values['controls_cp'] = 'CP_UTF16' then
+        begin
+          {$IF defined(MSWINDOWS) or defined(FPC_HAS_BUILTIN_WIDESTR_MANAGER) or defined(WITH_LCONVENCODING)}
+          ConSettings.CPType := {$IFDEF WITH_WIDEFIELDS}cCP_UTF16{$ELSE}cCP_UTF8{$ENDIF};
+          ConSettings.CTRL_CP := ZDefaultSystemCodePage;
+          ConSettings.AutoEncode := True;
+          {$ELSE}
+          if ConSettings.ClientCodePage.Encoding = ceUTF8 then
           begin
-            if ( IsFullMultiByteCodePage(CP)) then //dwFlags MUST be Set to 0!!!!
-            begin
-              l := WideCharToMultiByte(CP,0, @ws[1], - 1, nil, 0, nil, nil); //Checkout the result length
-              SetLength(Result, l - 1); //SetResult Length
-              if l > 1 then
-                WideCharToMultiByte(CP,0, @ws[1], - 1, @Result[1], l - 1, nil, nil); // Convert Wide down to Ansi
-            end
-            else
-            begin
-              l := WideCharToMultiByte(CP,
-                WC_COMPOSITECHECK or WC_DISCARDNS or WC_SEPCHARS or WC_DEFAULTCHAR,
-                @ws[1], - 1, nil, 0, nil, nil); //Checkout the result length
-              SetLength(Result, l - 1); //SetResult Length
-              if l > 1 then
-                WideCharToMultiByte(CP,
-                  WC_COMPOSITECHECK or WC_DISCARDNS or WC_SEPCHARS or WC_DEFAULTCHAR,
-                  @ws[1], - 1, @Result[1], l - 1, nil, nil); // Convert Wide down to Ansi
-            end;
+            ConSettings.CPType := {$IFDEF WITH_WIDEFIELDS}cCP_UTF16{$ELSE}cCP_UTF8{$ENDIF};
+            ConSettings.CTRL_CP := 65001;
+            ConSettings.AutoEncode := True;
           end
           else
-            Result := UTF8Encode(ws); //toal chars
+          begin
+            ConSettings.CPType := cCP_UTF8;
+            ConSettings.CTRL_CP := 65001;
+            ConSettings.AutoEncode := False;
+          end;
+          {$IFEND}
+        end
+        else // nothing was found set defaults
+        begin
+          {$IFDEF FPC}
+          ConSettings.CPType := cCP_UTF8;
+          ConSettings.CTRL_CP := 65001;
+          {$ELSE}
+          ConSettings.CPType := cGET_ACP;
+          ConSettings.CTRL_CP := GetACP;
           {$ENDIF}
-        {$ENDIF}
-      end;
-  end; { ZWAnsiString }
-
-  {**
-    Converts Ansi string to Unicode string using specified code page.
-    @param   s        Ansi string.
-    @param   CP Code page to be used in conversion.
-    @returns Converted wide string.
-  }
-  function ZAnsiToWideString(const s: AnsiString; CP: Word): WideString;
-  {$IFNDEF FPC}
-    {$IFNDEF DELPHI14_UP}
-  var
-      {$IFNDEF DELPHI12_UP}
-      l: integer;
-      {$ELSE}
-      AnsiTemp: AnsiString;
-      {$ENDIF}
-    {$ENDIF}
-  {$ENDIF}
-  begin
-    if s = '' then
-      Result := ''
-    else
-      if CP = 65001 then
-        result := UTF8ToString(s)
-      else
-        {$IFDEF FPC}
-        Result := WideString(S)
-        {$ELSE}
-          {$IFDEF DELPHI12_UP}
-            if ( CP <> $ffff ) then
-            {$IFDEF DELPHI14_UP} //possible MARVIN mode...
-              Result := UTF8ToString(AnsiToUTF8Ex(s, CP))
-            {$ELSE}
-              begin
-                AnsiTemp := s;
-                SetCodePage(AnsiTemp, CP);
-                Result := WideString(AnsiTemp);
-              end
-            {$ENDIF}
-            else
-              Result := WideString(s);
-          {$ELSE} //Here we can use faster Delphi-RTL if somebode knows how!
-            if ( CP <> $ffff ) then //Older Delphi-Version can use Allways the Win-APi
-            begin
-              if ( IsFullMultiByteCodePage(CP) ) then //dwFlags must be set to 0!!!
-              begin
-                l := MultiByteToWideChar(CP, 0, PAnsiChar(@s[1]), - 1, nil, 0); //Checkout the Result-Lengh
-                SetLength(Result, l - 1); //Set Result-Length
-                if l > 1 then
-                  MultiByteToWideChar(CP, 0, PAnsiChar(@s[1]),
-                    - 1, PWideChar(@Result[1]), l - 1); //Convert Ansi to Wide with supported Chars
-              end
-              else
-              begin
-                l := MultiByteToWideChar(CP, MB_PRECOMPOSED, PAnsiChar(@s[1]), - 1, nil, 0); //Checkout the Result-Lengh
-                SetLength(Result, l - 1);
-                if l > 1 then
-                  MultiByteToWideChar(CP, MB_PRECOMPOSED, PAnsiChar(@s[1]),
-                    - 1, PWideChar(@Result[1]), l - 1); //Convert Ansi to Wide with supported Chars
-              end;
-            end
-            else
-              Result := WideString(s);
-          {$ENDIF}
-        {$ENDIF}
-  end; { ZWideString }
-
-  function ZCPWideString(const ws: WideString; CP: Word): WideString;
-  begin
-    Result := ZAnsiToWideString(ZWideToAnsiString(ws, CP), CP);
-  end;
-
-  {**
-    Egonhugeist
-    This little function picks unsupported chars out. So the data is 100%
-    Server-supported and no Errors where raised
-    }
-  function ZCPCheckedAnsiString(const s: AnsiString; CP: Word): AnsiString;
-  begin
-    {$IFDEF FPC}
-    Result := S;
-    {$ELSE}
-    Result := ZWideToAnsiString(ZAnsiToWideString(s, CP), CP);
+        end;
     {$ENDIF}
   end;
+end;
 
-  function ZCPToAnsiString(const s: AnsiString; CP: Word): AnsiString;
-  begin
-    {$IFDEF FPC}
-    Result := S;
-    {$ELSE}
-    Result := ZWideToAnsiString(ZAnsiToWideString(s, CP), CP);
-    {$ENDIF}
-  end;
-
-  function ZAnsiStringToCP(const s: AnsiString; CP: Word): AnsiString;
-  begin
-    {$IFDEF FPC}
-    Result := S;
-    {$ELSE}
-    Result := ZWideToAnsiString(ZAnsiToWideString(s, CP), CP);
-    {$ENDIF}
-  end;
+{$IFDEF WITH_LCONVENCODING}
+function NoConvert(const s: string): string;
+begin
+  Result := S;
+end;
 {$ENDIF}
-{**
-  EgonHugeist:
-  Now use the new Functions to get encoded Strings instead of
-  hard-coded Compiler-Directives or UTF8Encode/Decode:
 
-  function ZDbcString(const Ansi: AnsiString; const Encoding: TZCharEncoding = ceDefault): String;
-  function ZPlainString(const Str: String; const Encoding: TZCharEncoding = ceDefault): AnsiString;
-
-  These functions do auto arrange the in/out-coming AnsiStrings in
-  dependency of the used CharacterSet and the used Compiler whithout
-  String-DataLoss!!.
-  So my thouths where use only these two function for all
-  String/Ansi/Unicode-handlings of DBC-layer. Which means in full effect
-  no more directives in Zeos Source-Code then here to do this handling.
-  @param Ansi: the String which has to be handled.
-  @param Encoding is set to Default-Character-Set we've choosen bevor (on conecting)
-    Change this if you need some Transtations to a specified Encoding.
-    Example: CharacterSet was set to Latin1 and some "special"-String MUST BE
-     UTF8 instead of Latin1. (SSL-Keys eventualy)
-  @param Convert ignored for Delphi means if the Chararacters should be propper
-    to the specified codepage
-
-
-  IS there a need for it? AnsiEncoded adaps automaticaly to WideString
-  So what about coming UTF16/32????
-}
-
-function TZCodePagedObject.ZDbcString(const Ansi: AnsiString;
-  const Encoding: TZCharEncoding = ceDefault): String;
-var
-  UseEncoding: TZCharEncoding;
-begin
-  if Encoding = ceDefault then
-    if not Assigned(FCodePage) then
-      raise Exception.Create('CodePage-Informations not Assigned!')
-    else
-      UseEncoding := FCodePage.Encoding
-  else
-    UseEncoding := Encoding;
-
-  case UseEncoding of
-    ceUTF8:
-      {$IFDEF DELPHI12_UP}
-        Result := UTF8ToString(Ansi); //Decode the AnsiString
-      {$ELSE}
-        Result := Ansi;
-      {$ENDIF}
-    {$IFNDEF WITH_WIDECONTROLS}
-    ceUTF8AsAnsi: Result := UTF8ToAnsi(Ansi);
-    {$ENDIF}
-    else
-      {$IFDEF DELPHI12_UP}
-        {$IFDEF WITH_CHAR_CONTROL}
-        Result := ZAnsiToWideString(Ansi, FCodePage^.CP);
-        {$ELSE}
-        Result := String(Ansi);
-        {$ENDIF}
-      {$ELSE}
-        {$IFDEF FPC}
-        Result := Ansi; //Ansi to Ansi is no Problem!!!
-        {$ELSE}
-          {$IFDEF WITH_CHAR_CONTROL}
-          Result := ZCPCheckedAnsiString(Ansi, FCodePage^.CP);
-          {$ELSE}
-          Result := Ansi;
-          {$ENDIF}
-        {$ENDIF}
-      {$ENDIF}
-    end;
-end;
-
-{**
-EgonHugeist:
-  Now use the new Functions to get encoded Strings instead of
-  hard-Coded Compiler-Directives or UTF8Encode/Decode:
-
-  function ZDbcString(const Ansi: AnsiString; const Encoding: TZCharEncoding = ceDefault): String;
-  function ZPlainString(const Str: String; const Encoding: TZCharEncoding = ceDefault): AnsiString;
-
-  These functions do auto arrange the in/out-coming AnsiStrings in
-  dependency of the used CharacterSet and the used Compiler whithout
-  String-DataLoss!!.
-  So my thouths where Use only these two function for all
-  String/Ansi/Unicode-handlings. Which means in full effect no more Directives
-  in Zeos Source-Code then here to do this Handling
-  @Str: the String which has to be handled.
-  @Encoding is set to Default-Character-Set we've choosen bevor (on conecting)
-    Change this if you need some Transtations to a specified Encoding.
-    Example: CharacterSet was set to Latin1 and some "special"-String MUST BE
-     UTF8 instead of Latin1. (SSL-Keys eventualy)
-}
-function TZCodePagedObject.ZPlainString(const AStr: String;
-  const Encoding: TZCharEncoding = ceDefault): ZAnsiString;
-var
-  UseEncoding: TZCharEncoding;
-begin
-  if Encoding = ceDefault then
-    if not Assigned(FCodePage) then
-      raise Exception.Create('CodePage-Informations not Assigned!')
-    else
-      UseEncoding := FCodePage.Encoding
-  else
-    UseEncoding := Encoding;
-
-  case UseEncoding of
-    ceUTF8:
-      {$IFDEF DELPHI12_UP}
-      Result := UTF8Encode(AStr);
-      {$ELSE}
-        if DetectUTF8Encoding(AStr) in [etUTF8, etUSASCII] then
-          Result := AStr
-        else
-          Result := AnsiToUTF8(AStr);
-      {$ENDIF}
-    {$IFNDEF WITH_WIDECONTROLS}
-    ceUTF8AsAnsi:
-        if DetectUTF8Encoding(AStr) in [etAnsi] then
-          Result := AnsiToUTF8(AStr)
-        else
-          Result := AStr;
-    {$ENDIF}
-    else
-      begin
-      { EgonHugeist:
-        To Delphi12_UP and ev. (comming) FPC 2.8 Users:
-        This function Result an Ansi-String with default DB CodePage
-        Possible Problems:
-          if you've CodePage 1252 and add some Chinese Letters the CodePage
-          turns to 1200(Windows Unicode) which is able to pick up this 2Byte letters
-          So on we've to add an additional Param to my encodingRecord
-          like an !SAVE!-Alias, we've to use and the CodePage we must have
-          here if it's not UTFx
-
-          BE WARNED!! This is a string-helper Function to handle data loss in
-          dependency of the choosen Character-Codepage not
-          a solution to enable all chars for your spezified CharacterSet of your
-          Connection.}
-      {$IFDEF DELPHI12_UP} //later for FPC 2.8 too eventual
-        {$IFDEF WITH_CHAR_CONTROL}
-        Result := ZWideToAnsiString(AStr, FCodePage^.CP);
-        {$ELSE}
-        Result := AnsiString(AStr);
-        {$ENDIF}
-      {$ELSE}
-        {$IFDEF FPC}
-          Result := AStr; //Ansi to Ansi is no Problem!!!
-        {$ELSE} //Delphi7=>?<2009
-          {$IFDEF WITH_CHAR_CONTROL}
-          Result := ZCPCheckedAnsiString(AStr, FCodePage^.CP);
-          {$ELSE}
-          Result := AStr;
-          {$ENDIF}
-        {$ENDIF}
-      {$ENDIF}
-    end;
-  end;
-end;
-
-function TZCodePagedObject.ZStringW(const ws: WideString; const Encoding: TZCharEncoding = ceDefault): String;
-var
-  UseEncoding: TZCharEncoding;
-begin
-  if Encoding = ceDefault then
-    if not Assigned(FCodePage) then
-      raise Exception.Create('CodePage-Informations not Assigned!')
-    else
-      UseEncoding := FCodePage.Encoding
-  else
-    UseEncoding := Encoding;
-
-  case UseEncoding of
-    ceUTF8:
-        {$IFDEF DELPHI12_UP}
-        Result := WS;
-        {$ELSE}
-        Result := UTF8Encode(WS);
-        {$ENDIF}
-    else
-    { EgonHugeist:
-      To Delphi12_UP and ev. (comming) FPC 2.8 Users:
-      This function Result an Ansi-String with default DB CodePage
-      Possible Problems:
-        if you've CodePage 1252 and add some Chinese Letters the CodePage
-        turns to 1200(Windows Unicode) which is able to pick up this 2Byte letters
-        So on we've to add an additional Param to my encodingRecord
-        like an !SAVE!-Alias, we've to use and the CodePage we must have
-        here if it's not UTFx
-
-        BE WARNED!! This is a string-helper Function to handle data loss in
-        dependency of the choosen Character-Codepage not
-        a solution to enable all chars for your spezified CharacterSet of your
-        Connection.}
-    {$IFDEF DELPHI12_UP} //later for FPC 2.8 too eventual
-      Result := WS;
-    {$ELSE}
-      {$IFDEF FPC}
-        Result := UTF8Encode(WS);
-      {$ELSE} //Delphi7=>?<2009
-        {$IFDEF WITH_CHAR_CONTROL}
-        Result := ZWideToAnsiString(ws, FCodePage^.CP);
-        {$ELSE}
-        Result := UTF8Encode(WS);
-        {$ENDIF}
-      {$ENDIF}
-    {$ENDIF}
-  end;
-end;
-
-destructor TZCodePagedObject.Destroy;
-begin
-  Self.FCodePage := nil;
-  inherited Destroy;
-end;
 
 {$IFDEF UNIX}
   {$IFDEF FPC}
@@ -743,33 +550,120 @@ end;
   {$ENDIF}
 {$ENDIF}
 
-{$IFNDEF FPC}
-function Hash(S : AnsiString) : LongWord;
+{$IFOPT Q+}
+  {$DEFINE OverFlowCheckEnabled}
+  {$OVERFLOWCHECKS OFF}
+{$ENDIF}
+function Hash(const key: ZWideString): Cardinal;
+var
+  I: integer;
+begin
+  Result := 0;
+  for I := 1 to length(key) do
+  begin
+    Result := (Result shl 5) or (Result shr 27);
+    Result := Result xor Cardinal(key[I]);
+  end;
+end; { Hash }
+
+(*function Hash(const S: RawByteString): Cardinal; //perform the FPC used ELF Hash algorithm -> pretty slow(byte hashed) but tiny
 Var
   thehash,g,I : LongWord;
 begin
-   thehash:=0;
-   For I:=1 to Length(S) do { 0 terminated }
-     begin
-     thehash:=thehash shl 4;
-     inc(theHash,Ord(S[i]));
-     g:=thehash and LongWord($f shl 28);
-     if g<>0 then
-       begin
-       thehash:=thehash xor (g shr 24);
-       thehash:=thehash xor g;
-       end;
-     end;
-   If theHash=0 then
-     Hash:=$ffffffff
+  thehash:=0;
+  For I:=1 to Length(S) do { 0 terminated }
+  begin
+    thehash:=thehash shl 4;
+    inc(theHash,Ord(S[i]));
+    g:=thehash and $f0000000;;
+    if g<>0 then
+    begin
+      thehash:=thehash xor (g shr 24);
+      thehash:=thehash xor g;
+    end;
+  end;
+  If theHash=0 then
+     Result := $ffffffff
    else
-     Hash:=TheHash;
+     Result :=TheHash;
+end;*)
+
+{ ported from http://stofl.org/questions/3690608/simple-string-hashing-function}
+//perform a MurmurHash2 algorithm by Austin Appleby loads faster (4Byte aligned)
+//Changes by EgonHugeist:
+//use PAnsiChar instead of S[] to inc the 4Byte blocks -> faster!
+//note: we can also use 64Bit versions: http://factgrabber.com/index.php?q=MurmurHash&lcid=xrnmicaJ5olmGUbBZJlkwWah5plkiYaJJpkGgSexJhkm
+//function MurmurHash2(const S: RawByteString; const Seed: LongWord=$9747b28c): LongWord;
+function Hash(const S: RawByteString): LongWord;
+var
+  k: LongWord;
+  Len: LongWord;
+  P, PEnd: PAnsiChar;
+const
+  // 'm' and 'r' are mixing constants generated offline.
+  // They're not really 'magic', they just happen to work well.
+  m = $5bd1e995;
+  r = 24;
+begin
+  //The default seed, $9747b28c, is from the original C library
+  P := Pointer(S);
+  if P = nil then
+    Result := $ffffffff
+  else
+  begin
+    Len := {%Result-}PLengthInt(P - StringLenOffSet)^;
+    // Initialize the hash to a 'random' value
+    Result := $9747b28c xor len;
+
+    // Mix 4 bytes at a time into the hash
+    PEnd := P + Len - 4;
+    while P < PEnd do
+    begin
+      k := PLongWord(P)^;
+
+      k := k * m;
+      k := k xor (k shr r);
+      k := k * m;
+
+      Result := Result * m;
+      Result := Result xor k;
+
+      Inc(P, 4);
+    end;
+    Inc(PEnd, 4);
+    Len := PEnd-P;
+
+    {   Handle the last few bytes of the input array
+            P: ... $69 $18 $2f
+    }
+    if len = 3 then
+      Result := Result xor (LongWord((P+2)^) shl 16);
+    if len >= 2 then
+      Result := Result xor (LongWord((P+1)^) shl 8);
+    if len >= 1 then
+    begin
+      Result := Result xor (LongWord(P^));
+      Result := Result * m;
+    end;
+
+    // Do a few final mixes of the hash to ensure the last few
+    // bytes are well-incorporated.
+    Result := Result xor (Result shr 13);
+    Result := Result * m;
+    Result := Result xor (Result shr 15);
+
+    Result := Result;
+  end;
 end;
 
+{$IFDEF OverFlowCheckEnabled}
+  {$OVERFLOWCHECKS ON}
+{$ENDIF}
+
+{$IFNDEF FPC}
 function AnsiProperCase(const S: string; const WordDelims: TSysCharSet): string;
 var
   P,PE : PChar;
-
 begin
   Result:=AnsiLowerCase(S);
   P:=PChar(pointer(Result));
@@ -787,26 +681,136 @@ end;
 {$ENDIF}
 
 {$IFNDEF WITH_CHARINSET}
-function CharInSet(C: AnsiChar; const CharSet: TSysCharSet): Boolean;
+function CharInSet(const C: AnsiChar; const CharSet: TSysCharSet): Boolean;
 begin
   result := C in Charset;
 end;
 
-function CharInSet(C: WideChar; const CharSet: TSysCharSet): Boolean;
+function CharInSet(const C: WideChar; const CharSet: TSysCharSet): Boolean;
 begin
   result := Char(C) in Charset;
 end;
 {$ENDIF}
 
 {$IFDEF  ZUTF8ToString}
-function UTF8ToString(const s: AnsiString): WideString;
+function UTF8ToString(const s: RawByteString): ZWideString;
 begin
   Result := UTF8Decode(s);
 end;
 {$UNDEF ZUTF8ToString}
 {$ENDIF}
 
+procedure ZSetString(const Src: PAnsiChar; const Len: Cardinal; var Dest: AnsiString);
+begin
+  if ( Len = 0 ) then
+    Dest := ''
+  else
+    if (Pointer(Dest) <> nil) and //Empty?
+       ({%H-}PRefCntInt(NativeUInt(Dest) - StringRefCntOffSet)^ = 1) {refcount} and
+       ({%H-}PLengthInt(NativeUInt(Dest) - StringLenOffSet)^ = LengthInt(Len)) {length} then
+    begin
+      if Src <> nil then Move(Src^, Pointer(Dest)^, Len)
+    end
+    else
+      SetString(Dest, Src, Len);
+end;
 
+procedure ZSetString(const Src: PAnsiChar; const Len: Cardinal; var Dest: UTF8String);
+begin
+  if ( Len = 0 ) then
+    Dest := ''
+  else
+    if (Pointer(Dest) <> nil) and //Empty?
+       ({%H-}PRefCntInt(NativeUInt(Dest) - StringRefCntOffSet)^ = 1) {refcount} and
+       ({%H-}PLengthInt(NativeUInt(Dest) - StringLenOffSet)^ = LengthInt(Len)) {length} then
+    begin
+      if Src <> nil then Move(Src^, Pointer(Dest)^, Len);
+    end
+    else
+      {$IFDEF MISS_RBS_SETSTRING_OVERLOAD}
+      begin
+        Dest := '';
+        SetLength(Dest, Len);
+        if Src <> nil then Move(Src^, Pointer(Dest)^, Len);
+      end;
+      {$ELSE}
+      SetString(Dest, Src, Len);
+      {$ENDIF}
+end;
+
+//EgonHugeist: my fast ByteToWord shift without encoding maps and/or alloc a ZWideString
+procedure ZSetString(Src: PAnsiChar; const Len: LengthInt; var Dest: ZWideString); overload;
+var
+  PEnd: PAnsiChar;
+  PW: PWideChar;
+begin
+  if ( Len = 0 ) then
+    Dest := ''
+  else
+  begin
+    {$IFDEF PWIDECHAR_IS_PUNICODECHAR}
+    if (Pointer(Dest{%H-}) = nil) or//empty
+       ({%H-}PRefCntInt(NativeUInt(Dest) - StringRefCntOffSet)^ <> 1) or { unique string ? }
+       (Len <> {%H-}PLengthInt(NativeUInt(Dest) - StringLenOffSet)^) then { length as expected ? }
+      SetString(Dest, nil, Len);
+    {$ELSE}
+    SetString(Dest, nil, Len);
+    {$ENDIF}
+    if Src <> nil then
+    begin
+      PW := Pointer(Dest);
+      PEnd := Src+Len-4;
+      while Src < PEnd do //quad conversion per loop
+      begin
+        PWord(PW)^ := PByte(Src)^;
+        PWord(PW+1)^ := PByte(Src+1)^;
+        PWord(PW+2)^ := PByte(Src+2)^;
+        PWord(PW+3)^ := PByte(Src+3)^;
+        Inc(Src, 4);
+        Inc(PW, 4);
+      end;
+      Inc(PEnd, 4);
+      while Src < PEnd do
+      begin
+        PWord(PW)^ := PByte(Src)^;
+        Inc(Src);
+        Inc(PW);
+      end;
+    end;
+  end;
+end;
+
+{$IFDEF WITH_RAWBYTESTRING}
+procedure ZSetString(const Src: PAnsiChar; const Len: Cardinal; var Dest: RawByteString);
+begin
+  if ( Len = 0 ) then
+    Dest := ''
+  else
+    if (Pointer(Dest) <> nil) and //Empty?
+       ({%H-}PRefCntInt(NativeUInt(Dest) - StringRefCntOffSet)^ = 1) {refcount} and
+       ({%H-}PLengthInt(NativeUInt(Dest) - StringLenOffSet)^ = LengthInt(Len)) {length} then
+    begin
+      if Src <> nil then Move(Src^, Pointer(Dest)^, Len)
+    end
+    else
+      {$IFDEF MISS_RBS_SETSTRING_OVERLOAD}
+      begin
+        Dest := '';
+        SetLength(Dest, Len);
+        if Src <> nil then Move(Src^, Pointer(Dest)^, Len);
+      end;
+      {$ELSE}
+      SetString(Dest, Src, Len);
+      {$ENDIF}
+end;
+{$ENDIF}
+
+
+initialization
+  case ConSettingsDummy.CPType of
+    cCP_UTF16, cGET_ACP: ConSettingsDummy.CTRL_CP := ZDefaultSystemCodePage;
+    cCP_UTF8: ConSettingsDummy.CTRL_CP := 65001;
+  end;
 end.
 
 

@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,8 +56,8 @@ interface
 {$I ZDbc.inc}
 
 uses
-  Types, Classes, SysUtils, Contnrs, ZClasses, ZSysUtils, ZDbcIntfs, ZDbcResultSet,
-  ZDbcCache, ZCompatibility;
+  Types, Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils, Contnrs,
+  ZClasses, ZDbcIntfs, ZDbcResultSet, ZDbcCache, ZCompatibility;
 
 type
   // Forward declarations.
@@ -101,9 +99,10 @@ type
 
     procedure PostUpdates;
     procedure CancelUpdates;
+    procedure PostUpdatesCached;
+    procedure DisposeCachedUpdates;
     procedure RevertRecord;
     procedure MoveToInitialRow;
-    procedure RefreshRow; // FOS+ 071106
   end;
 
   {** Implements cached ResultSet. }
@@ -158,9 +157,9 @@ type
     {END PATCH [1214009] CalcDefaults in TZUpdateSQL and Added Methods to GET the DB NativeResolver}
   public
     constructor CreateWithStatement(SQL: string; Statement: IZStatement;
-      ClientCodePage: PZCodePage);
+      ConSettings: PZConSettings);
     constructor CreateWithColumns(ColumnsInfo: TObjectList; SQL: string;
-      ClientCodePage: PZCodePage);
+      ConSettings: PZConSettings);
     destructor Destroy; override;
 
     procedure Close; override;
@@ -172,16 +171,24 @@ type
     function IsNull(ColumnIndex: Integer): Boolean; override;
     function GetPChar(ColumnIndex: Integer): PChar; override;
     function GetString(ColumnIndex: Integer): String; override;
-    function GetUnicodeString(ColumnIndex: Integer): Widestring; override;
+    function GetAnsiString(ColumnIndex: Integer): AnsiString; override;
+    function GetUTF8String(ColumnIndex: Integer): UTF8String; override;
+    function GetRawByteString(ColumnIndex: Integer): RawByteString; override;
+    function GetUnicodeString(ColumnIndex: Integer): ZWidestring; override;
     function GetBoolean(ColumnIndex: Integer): Boolean; override;
-    function GetByte(ColumnIndex: Integer): ShortInt; override;
-    function GetShort(ColumnIndex: Integer): SmallInt; override;
+    function GetByte(ColumnIndex: Integer): Byte; override;
+    function GetShort(ColumnIndex: Integer): ShortInt; override;
+    function GetWord(ColumnIndex: Integer): Word; override;
+    function GetSmall(ColumnIndex: Integer): SmallInt; override;
+    function GetUInt(ColumnIndex: Integer): Cardinal; override;
     function GetInt(ColumnIndex: Integer): Integer; override;
+    function GetULong(ColumnIndex: Integer): UInt64; override;
     function GetLong(ColumnIndex: Integer): Int64; override;
     function GetFloat(ColumnIndex: Integer): Single; override;
     function GetDouble(ColumnIndex: Integer): Double; override;
+    function GetCurrency(ColumnIndex: Integer): Currency; override;
     function GetBigDecimal(ColumnIndex: Integer): Extended; override;
-    function GetBytes(ColumnIndex: Integer): TByteDynArray; override;
+    function GetBytes(ColumnIndex: Integer): TBytes; override;
     function GetDate(ColumnIndex: Integer): TDateTime; override;
     function GetTime(ColumnIndex: Integer): TDateTime; override;
     function GetTimestamp(ColumnIndex: Integer): TDateTime; override;
@@ -203,24 +210,37 @@ type
     function RowDeleted: Boolean; override;
 
     procedure UpdateNull(ColumnIndex: Integer); override;
-    procedure UpdateBoolean(ColumnIndex: Integer; Value: Boolean); override;
-    procedure UpdateByte(ColumnIndex: Integer; Value: ShortInt); override;
-    procedure UpdateShort(ColumnIndex: Integer; Value: SmallInt); override;
-    procedure UpdateInt(ColumnIndex: Integer; Value: Integer); override;
-    procedure UpdateLong(ColumnIndex: Integer; Value: Int64); override;
-    procedure UpdateFloat(ColumnIndex: Integer; Value: Single); override;
-    procedure UpdateDouble(ColumnIndex: Integer; Value: Double); override;
-    procedure UpdateBigDecimal(ColumnIndex: Integer; Value: Extended); override;
-    procedure UpdatePChar(ColumnIndex: Integer; Value: PChar); override;
+    procedure UpdateBoolean(ColumnIndex: Integer; const Value: Boolean); override;
+    procedure UpdateByte(ColumnIndex: Integer; const Value: Byte); override;
+    procedure UpdateShort(ColumnIndex: Integer; const Value: ShortInt); override;
+    procedure UpdateWord(ColumnIndex: Integer; const Value: Word); override;
+    procedure UpdateSmall(ColumnIndex: Integer; const Value: SmallInt); override;
+    procedure UpdateUInt(ColumnIndex: Integer; const Value: Cardinal); override;
+    procedure UpdateInt(ColumnIndex: Integer; const Value: Integer); override;
+    procedure UpdateULong(ColumnIndex: Integer; const Value: UInt64); override;
+    procedure UpdateLong(ColumnIndex: Integer; const Value: Int64); override;
+    procedure UpdateFloat(ColumnIndex: Integer; const Value: Single); override;
+    procedure UpdateDouble(ColumnIndex: Integer; const Value: Double); override;
+    procedure UpdateCurrency(ColumnIndex: Integer; const Value: Currency); override;
+    procedure UpdateBigDecimal(ColumnIndex: Integer; const Value: Extended); override;
+    procedure UpdatePChar(ColumnIndex: Integer; const Value: PChar); override;
+    procedure UpdatePAnsiChar(ColumnIndex: Integer; Value: PAnsiChar); override;
+    procedure UpdatePAnsiChar(ColumnIndex: Integer; Value: PAnsiChar; Len: PNativeUint); override;
+    procedure UpdatePWideChar(ColumnIndex: Integer; Value: PWideChar); override;
+    procedure UpdatePWideChar(ColumnIndex: Integer; Value: PWideChar; Len: PNativeUint); override;
     procedure UpdateString(ColumnIndex: Integer; const Value: String); override;
-    procedure UpdateUnicodeString(ColumnIndex: Integer; const Value: WideString); override;
-    procedure UpdateBytes(ColumnIndex: Integer; const Value: TByteDynArray); override;
-    procedure UpdateDate(ColumnIndex: Integer; Value: TDateTime); override;
-    procedure UpdateTime(ColumnIndex: Integer; Value: TDateTime); override;
-    procedure UpdateTimestamp(ColumnIndex: Integer; Value: TDateTime); override;
-    procedure UpdateAsciiStream(ColumnIndex: Integer; Value: TStream); override;
-    procedure UpdateUnicodeStream(ColumnIndex: Integer; Value: TStream); override;
-    procedure UpdateBinaryStream(ColumnIndex: Integer; Value: TStream); override;
+    procedure UpdateAnsiString(ColumnIndex: Integer; const Value: AnsiString); override;
+    procedure UpdateUTF8String(ColumnIndex: Integer; const Value: UTF8String); override;
+    procedure UpdateRawByteString(ColumnIndex: Integer; const Value: RawByteString); override;
+    procedure UpdateUnicodeString(ColumnIndex: Integer; const Value: ZWideString); override;
+    procedure UpdateBytes(ColumnIndex: Integer; const Value: TBytes); override;
+    procedure UpdateDate(ColumnIndex: Integer; const Value: TDateTime); override;
+    procedure UpdateTime(ColumnIndex: Integer; const Value: TDateTime); override;
+    procedure UpdateTimestamp(ColumnIndex: Integer; const Value: TDateTime); override;
+    procedure UpdateAsciiStream(ColumnIndex: Integer; const Value: TStream); override;
+    procedure UpdateUnicodeStream(ColumnIndex: Integer; const Value: TStream); override;
+    procedure UpdateBinaryStream(ColumnIndex: Integer; const Value: TStream); override;
+    procedure UpdateLob(ColumnIndex: Integer; const Value: IZBlob); override;
     procedure UpdateDefaultExpression(ColumnIndex: Integer; const Value: string); override;
 
     procedure InsertRow; override;
@@ -233,8 +253,10 @@ type
     procedure MoveToInsertRow; override;
     procedure MoveToCurrentRow; override;
 
-    function CompareRows(Row1, Row2: Integer; const ColumnIndices: TIntegerDynArray;
-      const ColumnDirs: TBooleanDynArray): Integer; override;
+    function CompareRows(Row1, Row2: NativeInt; const ColumnIndices: TIntegerDynArray;
+      const CompareFuncs: TCompareFuncs): Integer; override;
+    function GetCompareFuncs(const ColumnIndices: TIntegerDynArray;
+      const CompareKinds: TComparisonKindArray): TCompareFuncs; override;
 
     //---------------------------------------------------------------------
     // Cached Updates
@@ -253,7 +275,11 @@ type
     procedure CancelUpdates; virtual;
     procedure RevertRecord; virtual;
     procedure MoveToInitialRow; virtual;
+    procedure PostUpdatesCached; virtual;
+    procedure DisposeCachedUpdates; virtual;
   end;
+
+  TZStringFieldAssignFromResultSet = procedure(ColumnIndex: Integer) of object;
 
   {**
     Implements Abstract cached ResultSet. This class should be extended
@@ -262,6 +288,9 @@ type
   TZCachedResultSet = class(TZAbstractCachedResultSet)
   private
     FResultSet: IZResultSet;
+    FStringFieldAssignFromResultSet: TZStringFieldAssignFromResultSet;
+    procedure ZStringFieldAssignFromResultSet_AnsiRec(ColumnIndex: Integer);
+    procedure ZStringFieldAssignFromResultSet_Unicode(ColumnIndex: Integer);
   protected
     procedure Open; override;
     function Fetch: Boolean; virtual;
@@ -270,8 +299,7 @@ type
     property ResultSet: IZResultSet read FResultSet write FResultSet;
   public
     constructor Create(ResultSet: IZResultSet; SQL: string;
-      Resolver: IZCachedResolver; ClientCodePage: PZCodePage);
-    destructor Destroy; override;
+      Resolver: IZCachedResolver; ConSettings: PZConSettings);
 
     procedure Close; override;
     function GetMetaData: IZResultSetMetaData; override;
@@ -285,8 +313,8 @@ type
 
 implementation
 
-uses ZMessages, ZDbcResultSetMetadata, ZDbcGenericResolver, ZDbcUtils
-  {$IFDEF WITH_WIDESTRUTILS}, WideStrUtils{$ENDIF};
+uses ZMessages, ZDbcResultSetMetadata, ZDbcGenericResolver, ZDbcUtils, ZEncoding;
+
 
 { TZAbstractCachedResultSet }
 
@@ -296,9 +324,9 @@ uses ZMessages, ZDbcResultSetMetadata, ZDbcGenericResolver, ZDbcUtils
   @param SQL an SQL query.
 }
 constructor TZAbstractCachedResultSet.CreateWithStatement(SQL: string;
-  Statement: IZStatement; ClientCodePage: PZCodePage);
+  Statement: IZStatement; ConSettings: PZConSettings);
 begin
-  inherited Create(Statement, SQL, nil, ClientCodePage);
+  inherited Create(Statement, SQL, nil, ConSettings);
   FCachedUpdates := False;
 end;
 
@@ -308,9 +336,9 @@ end;
   @param ColumnsInfo a columns info for cached rows.
 }
 constructor TZAbstractCachedResultSet.CreateWithColumns(
-  ColumnsInfo: TObjectList; SQL: string; ClientCodePage: PZCodePage);
+  ColumnsInfo: TObjectList; SQL: string; ConSettings: PZConSettings);
 begin
-  inherited Create(nil, SQL, nil, ClientCodePage);
+  inherited Create(nil, SQL, nil, ConSettings);
 
   CopyColumnsInfo(ColumnsInfo, Self.ColumnsInfo);
   FCachedUpdates := False;
@@ -566,6 +594,59 @@ begin
 end;
 
 {**
+  Posts all saved updates to the server but keeps them cached.
+}
+procedure TZAbstractCachedResultSet.PostUpdatesCached;
+var
+  i: Integer;
+begin
+  CheckClosed;
+  if FInitialRowsList.Count > 0 then
+  begin
+    i := 0;
+    while i < FInitialRowsList.Count do
+    begin
+      OldRowAccessor.RowBuffer := PZRowBuffer(FInitialRowsList[i]);
+      NewRowAccessor.RowBuffer := PZRowBuffer(FCurrentRowsList[i]);
+      Inc(i);
+
+      { Updates default field values. }
+      if NewRowAccessor.RowBuffer.UpdateType = utInserted then
+        CalculateRowDefaults(NewRowAccessor);
+
+      { Posts row updates. }
+      PostRowUpdates(OldRowAccessor, NewRowAccessor);
+    end;
+  end;
+end;
+
+{**
+  Frees the updates and marks records as unmodified. Complements
+  PostUpdatesCached.
+}
+procedure TZAbstractCachedResultSet.DisposeCachedUpdates;
+begin
+  while FInitialRowsList.Count > 0 do
+  begin
+    OldRowAccessor.RowBuffer := PZRowBuffer(FInitialRowsList[0]);
+    NewRowAccessor.RowBuffer := PZRowBuffer(FCurrentRowsList[0]);
+
+    if NewRowAccessor.RowBuffer.UpdateType <> utDeleted then
+    begin
+      NewRowAccessor.RowBuffer.UpdateType := utUnmodified;
+      if (FSelectedRow <> nil)
+        and (FSelectedRow.Index = NewRowAccessor.RowBuffer.Index) then
+          FSelectedRow.UpdateType := utUnmodified;
+    end;
+
+    { Remove cached rows. }
+    OldRowAccessor.Dispose;
+    FInitialRowsList.Delete(0);
+    FCurrentRowsList.Delete(0);
+  end;
+end;
+
+{**
   Cancels updates for all rows.
 }
 procedure TZAbstractCachedResultSet.CancelUpdates;
@@ -641,9 +722,18 @@ begin
   FInitialRowsList := TList.Create;
   FCurrentRowsList := TList.Create;
 
-  FRowAccessor := TZRowAccessor.Create(ColumnsInfo);
-  FOldRowAccessor := TZRowAccessor.Create(ColumnsInfo);
-  FNewRowAccessor := TZRowAccessor.Create(ColumnsInfo);
+  if ConSettings^.ClientCodePage^.IsStringFieldCPConsistent then
+  begin
+    FRowAccessor := TZRawRowAccessor.Create(ColumnsInfo, ConSettings);
+    FOldRowAccessor := TZRawRowAccessor.Create(ColumnsInfo, ConSettings);
+    FNewRowAccessor := TZRawRowAccessor.Create(ColumnsInfo, ConSettings);
+  end
+  else
+  begin
+    FRowAccessor := TZUnicodeRowAccessor.Create(ColumnsInfo, ConSettings);
+    FOldRowAccessor := TZUnicodeRowAccessor.Create(ColumnsInfo, ConSettings);
+    FNewRowAccessor := TZUnicodeRowAccessor.Create(ColumnsInfo, ConSettings);
+  end;
 
   FRowAccessor.AllocBuffer(FUpdatedRow);
   FRowAccessor.AllocBuffer(FInsertedRow);
@@ -733,7 +823,19 @@ begin
 {$IFNDEF DISABLE_CHECKING}
   CheckAvailable;
 {$ENDIF}
-  Result := FRowAccessor.GetPChar(ColumnIndex, LastWasNull);
+  {$IFDEF UNICODE}
+  FUniTemp := FRowAccessor.GetString(ColumnIndex, LastWasNull);
+  if Pointer(FUniTemp) = nil then
+    Result := PEmptyUnicodeString
+  else
+    Result := Pointer(FUniTemp); // no RTL conversion!
+  {$ELSE}
+  FRawTemp := FRowAccessor.GetString(ColumnIndex, LastWasNull);
+  if Pointer(FRawTemp) = nil then
+    Result := PEmptyAnsiString
+  else
+    Result := Pointer(FRawTemp); // no RTL conversion!
+  {$ENDIF}
 end;
 
 {**
@@ -756,13 +858,64 @@ end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
+  a <code>AnsiString</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractCachedResultSet.GetAnsiString(ColumnIndex: Integer): AnsiString;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetAnsiString(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>UTF8String</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractCachedResultSet.GetUTF8String(ColumnIndex: Integer): UTF8String;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetUTF8String(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>RawByteString</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>null</code>
+}
+function TZAbstractCachedResultSet.GetRawByteString(ColumnIndex: Integer): RawByteString;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetRawByteString(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
   a <code>Widestring</code> in the Java programming language.
 
   @param columnIndex the first column is 1, the second is 2, ...
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-function TZAbstractCachedResultSet.GetUnicodeString(ColumnIndex: Integer): Widestring;
+function TZAbstractCachedResultSet.GetUnicodeString(ColumnIndex: Integer): ZWidestring;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckAvailable;
@@ -796,7 +949,7 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>0</code>
 }
-function TZAbstractCachedResultSet.GetByte(ColumnIndex: Integer): ShortInt;
+function TZAbstractCachedResultSet.GetByte(ColumnIndex: Integer): Byte;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckAvailable;
@@ -813,12 +966,63 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>0</code>
 }
-function TZAbstractCachedResultSet.GetShort(ColumnIndex: Integer): SmallInt;
+function TZAbstractCachedResultSet.GetShort(ColumnIndex: Integer): ShortInt;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckAvailable;
 {$ENDIF}
   Result := FRowAccessor.GetShort(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>word</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractCachedResultSet.GetWord(ColumnIndex: Integer): Word;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetWord(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>small</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractCachedResultSet.GetSmall(ColumnIndex: Integer): SmallInt;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetSmall(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  an <code>uint</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractCachedResultSet.GetUInt(ColumnIndex: Integer): Cardinal;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetUInt(ColumnIndex, LastWasNull);
 end;
 
 {**
@@ -836,6 +1040,23 @@ begin
   CheckAvailable;
 {$ENDIF}
   Result := FRowAccessor.GetInt(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
+  a <code>ulong</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractCachedResultSet.GetULong(ColumnIndex: Integer): UInt64;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetULong(ColumnIndex, LastWasNull);
 end;
 
 {**
@@ -892,6 +1113,23 @@ end;
 {**
   Gets the value of the designated column in the current row
   of this <code>ResultSet</code> object as
+  a <code>currency</code> in the Java programming language.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @return the column value; if the value is SQL <code>NULL</code>, the
+    value returned is <code>0</code>
+}
+function TZAbstractCachedResultSet.GetCurrency(ColumnIndex: Integer): Currency;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckAvailable;
+{$ENDIF}
+  Result := FRowAccessor.GetCurrency(ColumnIndex, LastWasNull);
+end;
+
+{**
+  Gets the value of the designated column in the current row
+  of this <code>ResultSet</code> object as
   a <code>java.sql.BigDecimal</code> in the Java programming language.
 
   @param columnIndex the first column is 1, the second is 2, ...
@@ -917,7 +1155,7 @@ end;
   @return the column value; if the value is SQL <code>NULL</code>, the
     value returned is <code>null</code>
 }
-function TZAbstractCachedResultSet.GetBytes(ColumnIndex: Integer): TByteDynArray;
+function TZAbstractCachedResultSet.GetBytes(ColumnIndex: Integer): TBytes;
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckAvailable;
@@ -1044,7 +1282,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateBoolean(ColumnIndex: Integer;
-  Value: Boolean);
+  const Value: Boolean);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1064,7 +1302,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateByte(ColumnIndex: Integer;
-  Value: ShortInt);
+  const Value: Byte);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1074,7 +1312,7 @@ begin
 end;
 
 {**
-  Updates the designated column with a <code>short</code> value.
+  Updates the designated column with a <code>smallint</code> value.
   The <code>updateXXX</code> methods are used to update column values in the
   current row or the insert row.  The <code>updateXXX</code> methods do not
   update the underlying database; instead the <code>updateRow</code> or
@@ -1084,13 +1322,73 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateShort(ColumnIndex: Integer;
-  Value: SmallInt);
+  const Value: ShortInt);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
 {$ENDIF}
   PrepareRowForUpdates;
   FRowAccessor.SetShort(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>word</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateWord(ColumnIndex: Integer;
+  const Value: Word);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetWord(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>smallint</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateSmall(ColumnIndex: Integer;
+  const Value: SmallInt);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetSmall(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with an <code>uint</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateUInt(ColumnIndex: Integer;
+  const Value: Cardinal);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetUInt(ColumnIndex, Value);
 end;
 
 {**
@@ -1103,13 +1401,34 @@ end;
   @param columnIndex the first column is 1, the second is 2, ...
   @param x the new column value
 }
-procedure TZAbstractCachedResultSet.UpdateInt(ColumnIndex, Value: Integer);
+procedure TZAbstractCachedResultSet.UpdateInt(ColumnIndex: Integer;
+  const Value: Integer);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
 {$ENDIF}
   PrepareRowForUpdates;
   FRowAccessor.SetInt(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>ulong</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateULong(ColumnIndex: Integer;
+  const Value: UInt64);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetULong(ColumnIndex, Value);
 end;
 
 {**
@@ -1123,7 +1442,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateLong(ColumnIndex: Integer;
-  Value: Int64);
+  const Value: Int64);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1143,7 +1462,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateFloat(ColumnIndex: Integer;
-  Value: Single);
+  const Value: Single);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1163,13 +1482,33 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateDouble(ColumnIndex: Integer;
-  Value: Double);
+  const Value: Double);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
 {$ENDIF}
   PrepareRowForUpdates;
   FRowAccessor.SetDouble(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>currency</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateCurrency(ColumnIndex: Integer;
+  const Value: Currency);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetCurrency(ColumnIndex, Value);
 end;
 
 {**
@@ -1184,7 +1523,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateBigDecimal(ColumnIndex: Integer;
-  Value: Extended);
+  const Value: Extended);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1204,14 +1543,101 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdatePChar(ColumnIndex: Integer;
-  Value: PChar);
+  const Value: PChar);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
 {$ENDIF}
   PrepareRowForUpdates;
-  FRowAccessor.SetPChar(ColumnIndex, Value);
+  FRowAccessor.SetString(ColumnIndex, Value);
 end;
+
+{**
+  Updates the designated column with a <code>PAnsiChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdatePAnsiChar(ColumnIndex: Integer;
+  Value: PAnsiChar);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetPAnsiChar(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>TZAnsiRec</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdatePAnsiChar(ColumnIndex: Integer;
+  Value: PAnsiChar; Len: PNativeUInt);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetPAnsiChar(ColumnIndex, Value, Len);
+end;
+
+{**
+  Updates the designated column with a <code>PWideChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdatePWideChar(ColumnIndex: Integer;
+  Value: PWideChar);
+var Len: NativeUInt;
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  if Value = nil then
+    Len := 0
+  else
+    Len := {$IFDEF WITH_PWIDECHAR_STRLEN}SysUtils.StrLen{$ELSE}Length{$ENDIF}(Value);
+  FRowAccessor.SetPWideChar(ColumnIndex, Value, @Len);
+end;
+
+{**
+  Updates the designated column with a <code>PWideChar</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param Len a pointer to the Length of the value in codepoints
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdatePWideChar(ColumnIndex: Integer;
+  Value: PWideChar; Len: PNativeUInt);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetPWideChar(ColumnIndex, Value, Len);
+end;
+
 
 {**
   Updates the designated column with a <code>String</code> value.
@@ -1234,6 +1660,66 @@ begin
 end;
 
 {**
+  Updates the designated column with a <code>AnsiString</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateAnsiString(ColumnIndex: Integer;
+  const Value: AnsiString);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetAnsiString(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>UTF8String</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateUTF8String(ColumnIndex: Integer;
+  const Value: UTF8String);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetUTF8String(ColumnIndex, Value);
+end;
+
+{**
+  Updates the designated column with a <code>RawByteString</code> value.
+  The <code>updateXXX</code> methods are used to update column values in the
+  current row or the insert row.  The <code>updateXXX</code> methods do not
+  update the underlying database; instead the <code>updateRow</code> or
+  <code>insertRow</code> methods are called to update the database.
+
+  @param columnIndex the first column is 1, the second is 2, ...
+  @param x the new column value
+}
+procedure TZAbstractCachedResultSet.UpdateRawByteString(ColumnIndex: Integer;
+  const Value: RawByteString);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetRawByteString(ColumnIndex, Value);
+end;
+
+{**
   Updates the designated column with a <code>Widestring</code> value.
   The <code>updateXXX</code> methods are used to update column values in the
   current row or the insert row.  The <code>updateXXX</code> methods do not
@@ -1244,7 +1730,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateUnicodeString(ColumnIndex: Integer;
-  const Value: WideString);
+  const Value: ZWideString);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1264,7 +1750,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateBytes(ColumnIndex: Integer;
-  const Value: TByteDynArray);
+  const Value: TBytes);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1284,7 +1770,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateDate(ColumnIndex: Integer;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1304,7 +1790,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateTime(ColumnIndex: Integer;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1325,7 +1811,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateTimestamp(ColumnIndex: Integer;
-  Value: TDateTime);
+  const Value: TDateTime);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1345,7 +1831,7 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateAsciiStream(ColumnIndex: Integer;
-  Value: TStream);
+  const Value: TStream);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
@@ -1366,13 +1852,23 @@ end;
   @param length the length of the stream
 }
 procedure TZAbstractCachedResultSet.UpdateBinaryStream(
-  ColumnIndex: Integer; Value: TStream);
+  ColumnIndex: Integer; const Value: TStream);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
 {$ENDIF}
   PrepareRowForUpdates;
   FRowAccessor.SetBinaryStream(ColumnIndex, Value);
+end;
+
+procedure TZAbstractCachedResultSet.UpdateLob(ColumnIndex: Integer;
+  const Value: IZBlob);
+begin
+{$IFNDEF DISABLE_CHECKING}
+  CheckUpdatable;
+{$ENDIF}
+  PrepareRowForUpdates;
+  FRowAccessor.SetBlob(ColumnIndex, Value);
 end;
 
 {**
@@ -1386,22 +1882,13 @@ end;
   @param x the new column value
 }
 procedure TZAbstractCachedResultSet.UpdateUnicodeStream(
-  ColumnIndex: Integer; Value: TStream);
-var
-    TempStream: TStream;
+  ColumnIndex: Integer; const Value: TStream);
 begin
 {$IFNDEF DISABLE_CHECKING}
   CheckUpdatable;
 {$ENDIF}
   PrepareRowForUpdates;
-  {EgonHugeist:
-    Findout, wat's comming in! To avoid User-Bugs
-    it is possible that a PAnsiChar OR a PWideChar was written into
-    the Stream!!!  And these chars could be trunced with changing the
-    Stream.Size.}
-  TempStream:=ZDbcUtils.GetValidatedUnicodeStream(Value);
-  FRowAccessor.SetUnicodeStream(ColumnIndex, TempStream);
-  TempStream.Free;
+  FRowAccessor.SetUnicodeStream(ColumnIndex, Value);
 end;
 
 {**
@@ -1455,7 +1942,7 @@ begin
     RaiseForwardOnlyException;
 {$ENDIF}
 
-  if (Row >= 0) and (Row <= LastRowNo + 1) then
+  if not Closed and (Row >= 0) and (Row <= LastRowNo + 1) then
   begin
     RowNo := Row;
     if (Row >= 1) and (Row <= LastRowNo) then
@@ -1736,8 +2223,8 @@ end;
   @param ColumnIndices column indices to compare.
   @param ColumnDirs compare direction for each columns.
 }
-function TZAbstractCachedResultSet.CompareRows(Row1, Row2: Integer;
-  const ColumnIndices: TIntegerDynArray; const ColumnDirs: TBooleanDynArray): Integer;
+function TZAbstractCachedResultSet.CompareRows(Row1, Row2: NativeInt;
+  const ColumnIndices: TIntegerDynArray; const CompareFuncs: TCompareFuncs): Integer;
 var
   RowBuffer1, RowBuffer2: PZRowBuffer;
 begin
@@ -1748,7 +2235,13 @@ begin
   RowBuffer1 := PZRowBuffer(FRowsList[Row1 - 1]);
   RowBuffer2 := PZRowBuffer(FRowsList[Row2 - 1]);
   Result := FRowAccessor.CompareBuffers(RowBuffer1, RowBuffer2,
-    ColumnIndices, ColumnDirs);
+    ColumnIndices, CompareFuncs);
+end;
+
+function TZAbstractCachedResultSet.GetCompareFuncs(const ColumnIndices: TIntegerDynArray;
+  const CompareKinds: TComparisonKindArray): TCompareFuncs;
+begin
+  Result := FRowAccessor.GetCompareFuncs(ColumnIndices, CompareKinds);
 end;
 
 { TZCachedResultSet }
@@ -1759,23 +2252,32 @@ end;
   @param Resolver a cached updates resolver object.
 }
 constructor TZCachedResultSet.Create(ResultSet: IZResultSet; SQL: string;
-  Resolver: IZCachedResolver; ClientCodePage: PZCodePage);
+  Resolver: IZCachedResolver; ConSettings: PZConSettings);
 begin
-  inherited Create(ResultSet.GetStatement, SQL, nil,ClientCodePage);
+  inherited Create(ResultSet.GetStatement, SQL, nil, ConSettings);
   FResultSet := ResultSet;
   FResolver := Resolver;
   {BEGIN PATCH [1214009] CalcDefaults in TZUpdateSQL and Added Methods to GET the DB NativeResolver}
   FNativeResolver := Resolver;
   {END PATCH [1214009] CalcDefaults in TZUpdateSQL and Added Methods to GET the DB NativeResolver}
+  if Statement.GetConnection.GetIZPlainDriver.IsAnsiDriver and
+    ConSettings^.ClientCodePage^.IsStringFieldCPConsistent then
+      FStringFieldAssignFromResultSet := ZStringFieldAssignFromResultSet_AnsiRec
+    else
+      FStringFieldAssignFromResultSet := ZStringFieldAssignFromResultSet_Unicode;
   Open;
 end;
 
-{**
-  Destroys this object and cleanups the memory.
-}
-destructor TZCachedResultSet.Destroy;
+procedure TZCachedResultSet.ZStringFieldAssignFromResultSet_AnsiRec(ColumnIndex: Integer);
+var Len: NativeUInt;
 begin
-  inherited Destroy;
+  RowAccessor.SetPAnsiChar(ColumnIndex, ResultSet.GetPAnsiChar(ColumnIndex, Len), @Len);
+end;
+
+procedure TZCachedResultSet.ZStringFieldAssignFromResultSet_Unicode(ColumnIndex: Integer);
+var Len: NativeUInt;
+begin
+  RowAccessor.SetPWideChar(ColumnIndex, ResultSet.GetPWideChar(ColumnIndex, Len), @Len);
 end;
 
 {**
@@ -1788,7 +2290,10 @@ var
   I: Integer;
   TempRow: PZRowBuffer;
 begin
-  Result := FResultSet.Next;
+  if Assigned(FResultSet) then
+    Result := FResultSet.Next
+  else
+    Result := False;
   if not Result or ((MaxRows > 0) and (LastRowNo >= MaxRows)) then
     Exit;
 
@@ -1798,28 +2303,30 @@ begin
     RowAccessor.RowBuffer.Index := GetNextRowIndex;
     RowAccessor.RowBuffer.UpdateType := utUnmodified;
 
-    for I := 1 to ColumnsInfo.Count do
+    for I := FirstDbcIndex to ColumnsInfo.Count{$IFDEF GENERIC_INDEX}-1{$ENDIF} do
     begin
-      case TZColumnInfo(ColumnsInfo[I - 1]).ColumnType of
+      case TZColumnInfo(ColumnsInfo[I{$IFNDEF GENERIC_INDEX}-1{$ENDIF}]).ColumnType of
         stBoolean: RowAccessor.SetBoolean(I, ResultSet.GetBoolean(I));
         stByte: RowAccessor.SetByte(I, ResultSet.GetByte(I));
         stShort: RowAccessor.SetShort(I, ResultSet.GetShort(I));
+        stWord: RowAccessor.SetWord(I, ResultSet.GetWord(I));
+        stSmall: RowAccessor.SetSmall(I, ResultSet.GetSmall(I));
+        stLongWord: RowAccessor.SetUInt(I, ResultSet.GetUInt(I));
         stInteger: RowAccessor.SetInt(I, ResultSet.GetInt(I));
+        stULong: RowAccessor.SetLong(I, ResultSet.GetULong(I));
         stLong: RowAccessor.SetLong(I, ResultSet.GetLong(I));
         stFloat: RowAccessor.SetFloat(I, ResultSet.GetFloat(I));
         stDouble: RowAccessor.SetDouble(I, ResultSet.GetDouble(I));
+        stCurrency: RowAccessor.SetCurrency(I, ResultSet.GetCurrency(I));
         stBigDecimal: RowAccessor.SetBigDecimal(I, ResultSet.GetBigDecimal(I));
-        //stString: RowAccessor.SetPChar(I, ResultSet.GetPChar(I));
-        // gto: do we need PChar here? (Unicode problems)
-        stString: RowAccessor.SetString(I, ResultSet.GetString(I));
-        stUnicodeString: RowAccessor.SetUnicodeString(I,
-                  ResultSet.GetUnicodeString(I));
-        stBytes: RowAccessor.SetBytes(I, ResultSet.GetBytes(I));
+        stString, stUnicodeString: FStringFieldAssignFromResultSet(i);
+        stBytes,stGUID: RowAccessor.SetBytes(I, ResultSet.GetBytes(I));
         stDate: RowAccessor.SetDate(I, ResultSet.GetDate(I));
         stTime: RowAccessor.SetTime(I, ResultSet.GetTime(I));
         stTimestamp: RowAccessor.SetTimestamp(I, ResultSet.GetTimestamp(I));
         stAsciiStream, stBinaryStream, stUnicodeStream:
           RowAccessor.SetBlob(I, ResultSet.GetBlob(I));
+        stDataSet: RowAccessor.SetDataSet(i, ResultSet.GetDataSet(I));
 
       end;
       if ResultSet.WasNull then
@@ -1852,7 +2359,7 @@ var
 begin
   ColumnsInfo.Clear;
   MetaData := FResultSet.GetMetadata;
-  for I := 1 to Metadata.GetColumnCount do
+  for I := FirstDbcIndex to Metadata.GetColumnCount{$IFDEF GENERIC_INDEX}-1{$ENDIF} do
   begin
     ColumnInfo := TZColumnInfo.Create;
     with ColumnInfo do
@@ -1864,6 +2371,7 @@ begin
       Precision := Metadata.GetPrecision(I);
       Scale := Metadata.GetScale(I);
       ColumnType := Metadata.GetColumnType(I);
+      ColumnCodePage := MetaData.GetColumnCodePage(I);
     end;
     ColumnsInfo.Add(ColumnInfo);
   end;

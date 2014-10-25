@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,8 +56,8 @@ interface
 {$I ZComponent.inc}
 
 uses
-  Types, Classes, SysUtils, ZDbcIntfs, ZTokenizer, ZGenericSqlToken,
-  Contnrs, ZCompatibility;
+  Types, Classes, SysUtils, {$IFDEF MSEgui}mclasses,{$ENDIF}Contnrs,
+  ZDbcIntfs, ZTokenizer, ZGenericSqlToken, ZCompatibility;
 
 type
   {** Represents a SQL statement description object. }
@@ -379,9 +377,8 @@ begin
     Exit;
   end;
 
-  Tokenizer:=GetTokenizer;
-  Tokens := Tokenizer.TokenizeBufferToList(Text,
-    [toSkipComments, toUnifyWhitespaces]);
+  Tokenizer := GetTokenizer;
+  Tokens := Tokenizer.TokenizeBufferToList(Text, [toSkipComments, toUnifyWhitespaces]);
   try
     TokenIndex := 0;
     repeat
@@ -400,10 +397,7 @@ begin
 
           ParamName := TokenValue;
           if (ParamName <> '') and CharInSet(ParamName[1], [#39, '`', '"', '[']) then
-          begin
-            ParamName := Tokenizer.GetQuoteState.
-              DecodeString(ParamName, ParamName[1]);
-          end;
+            ParamName := Tokenizer.GetQuoteState.DecodeString(ParamName, ParamName[1]);
 
           ParamIndex := FindParam(ParamName);
           if ParamIndex < 0 then

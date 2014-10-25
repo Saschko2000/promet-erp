@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,7 +56,8 @@ interface
 {$I ZCore.inc}
 
 uses
-  Classes, SysUtils, ZSysUtils, ZTokenizer;
+  Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils,
+  ZSysUtils, ZTokenizer;
 
 type
 
@@ -73,7 +72,7 @@ type
   TZExpressionQuoteState = class (TZQuoteState)
   public
     function NextToken(Stream: TStream; FirstChar: Char;
-      Tokenizer: TZTokenizer): TZToken; override;
+      {%H-}Tokenizer: TZTokenizer): TZToken; override;
 
     function EncodeString(const Value: string; QuoteChar: Char): string; override;
     function DecodeString(const Value: string; QuoteChar: Char): string; override;
@@ -105,8 +104,8 @@ type
 
   {** Implements a default tokenizer object. }
   TZExpressionTokenizer = class (TZTokenizer)
-  public
-    constructor Create;
+  protected
+    procedure CreateTokenStates; override;
   end;
 
 implementation
@@ -125,7 +124,7 @@ const
 //     of the read var, like Stream.Read(LastChar, 1), to read 1 char
 //
 //     Instead, operations should use SizeOf(Type), like this:
-//     Stream.Read(LastChar, 1 * SizeOf(Char))
+//     Stream.Read(LastChar, SizeOf(Char))
 //
 //     This is unicode safe and ansi (Delphi under 2009) compatible
 
@@ -144,7 +143,7 @@ var
   begin
     Result := '';
     LastChar := #0;
-    while Stream.Read(LastChar, 1 * SizeOf(Char)) > 0 do
+    while Stream.Read(LastChar, SizeOf(Char)) > 0 do
     begin
       if CharInSet(LastChar, ['0'..'9']) then
       begin
@@ -153,7 +152,7 @@ var
       end
       else
       begin
-        Stream.Seek(-(1 * SizeOf(Char)), soFromCurrent);
+        Stream.Seek(-SizeOf(Char), soFromCurrent);
         Break;
       end;
     end;
@@ -172,7 +171,7 @@ begin
     FloatPoint := LastChar = '.';
     if FloatPoint then
     begin
-      Stream.Read(TempChar, 1 * SizeOf(Char));
+      Stream.Read(TempChar{%H-}, SizeOf(Char));
       Result.Value := Result.Value + TempChar;
     end;
   end;
@@ -184,11 +183,11 @@ begin
   { Reads a power part of the number }
   if CharInSet(LastChar, ['e', 'E']) then
   begin
-    Stream.Read(TempChar, 1 * SizeOf(Char));
+    Stream.Read(TempChar, SizeOf(Char));
     Result.Value := Result.Value + TempChar;
     FloatPoint := True;
 
-    Stream.Read(TempChar, 1 * SizeOf(Char));
+    Stream.Read(TempChar, SizeOf(Char));
     if CharInSet(TempChar, ['0'..'9', '-', '+']) then
       Result.Value := Result.Value + TempChar + ReadDecDigits
     else
@@ -235,11 +234,11 @@ begin
   Result.Value := FirstChar;
   LastChar := #0;
 
-  while Stream.Read(ReadChar, 1 * SizeOf(Char)) > 0 do
+  while Stream.Read(ReadChar{%H-}, SizeOf(Char)) > 0 do
   begin
     if (LastChar = FirstChar) and (ReadChar <> FirstChar) then
     begin
-      Stream.Seek(-(1 * SizeOf(Char)), soFromCurrent);
+      Stream.Seek(-SizeOf(Char), soFromCurrent);
       Break;
     end;
     Result.Value := Result.Value + ReadChar;
@@ -301,7 +300,7 @@ begin
 
   if FirstChar = '/' then
   begin
-    ReadNum := Stream.Read(ReadChar, 1 * SizeOf(Char));
+    ReadNum := Stream.Read(ReadChar{%H-}, SizeOf(Char));
     if (ReadNum > 0) and (ReadChar = '*') then
     begin
       Result.TokenType := ttComment;
@@ -310,7 +309,7 @@ begin
     else
     begin
       if ReadNum > 0 then
-        Stream.Seek(-(1 * SizeOf(Char)), soFromCurrent);
+        Stream.Seek(-SizeOf(Char), soFromCurrent);
     end;
   end;
 
@@ -339,12 +338,12 @@ end;
 }
 constructor TZExpressionWordState.Create;
 begin
-  SetWordChars(#0, #255, False);
+  SetWordChars(#0, #191, False);
+  SetWordChars(#192, high(char), True);
   SetWordChars('a', 'z', True);
   SetWordChars('A', 'Z', True);
   SetWordChars('0', '9', True);
   SetWordChars('_', '_', True);
-  SetWordChars(Char($c0), Char($ff), True); //chars from #192 (À) ~ 255 (ÿ)
 end;
 
 {**
@@ -373,10 +372,9 @@ end;
 { TZExpressionTokenizer }
 
 {**
-  Constructs a tokenizer with a default state table (as
-  described in the class comment).
+  Constructs a default state table (as described in the class comment).
 }
-constructor TZExpressionTokenizer.Create;
+procedure TZExpressionTokenizer.CreateTokenStates;
 begin
   WhitespaceState := TZWhitespaceState.Create;
 
@@ -386,12 +384,12 @@ begin
   WordState := TZExpressionWordState.Create;
   CommentState := TZExpressionCommentState.Create;
 
-  SetCharacterState(#0, #255, SymbolState);
-  SetCharacterState(#0, ' ', WhitespaceState);
+  SetCharacterState(#0, #32, WhitespaceState);
+  SetCharacterState(#33, #191, SymbolState);
+  SetCharacterState(#192, High(Char), WordState);
 
   SetCharacterState('a', 'z', WordState);
   SetCharacterState('A', 'Z', WordState);
-  SetCharacterState(Chr($c0),  Chr($ff), WordState); //chars from #192 (À) ~ 255 (ÿ)
   SetCharacterState('_', '_', WordState);
 
   SetCharacterState('0', '9', NumberState);

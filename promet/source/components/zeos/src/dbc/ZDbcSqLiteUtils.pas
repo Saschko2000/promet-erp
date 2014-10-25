@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -58,7 +56,8 @@ interface
 {$I ZDbc.inc}
 
 uses
-  Classes, SysUtils, ZSysUtils, ZDbcIntfs, ZPlainSqLiteDriver, ZDbcLogging, ZCompatibility;
+  Classes, SysUtils,
+  ZSysUtils, ZDbcIntfs, ZPlainSqLiteDriver, ZDbcLogging, ZCompatibility;
 
 {**
   Convert string SQLite field type to SQLType
@@ -67,9 +66,9 @@ uses
   @param Decimals the column position after decimal point
   @result the SQLType field type value
 }
-function ConvertSQLiteTypeToSQLType(TypeName: string; var Precision: Integer;
-  var Decimals: Integer; CharEncoding: TZCharEncoding;
-  const UTF8StringAsWideField: Boolean): TZSQLType;
+function ConvertSQLiteTypeToSQLType(TypeName: RawByteString;
+  const UndefinedVarcharAsStringLength: Integer; var Precision: Integer;
+  var Decimals: Integer; const CtrlsCPType: TZControlsCodePage): TZSQLType;
 
 {**
   Checks for possible sql errors.
@@ -79,23 +78,10 @@ function ConvertSQLiteTypeToSQLType(TypeName: string; var Precision: Integer;
   @param LogCategory a logging category.
   @param LogMessage a logging message.
 }
-procedure CheckSQLiteError(PlainDriver: IZSQLitePlainDriver;
-  ErrorCode: Integer; ErrorMessage: PAnsiChar;
-  LogCategory: TZLoggingCategory; LogMessage: string);
-
-{**
-  Converts an string into escape PostgreSQL format.
-  @param Value a regular string.
-  @return a string in PostgreSQL escape format.
-}
-function EncodeString(Value: ansistring): ansistring;
-
-{**
-  Converts an string from escape PostgreSQL format.
-  @param Value a string in PostgreSQL escape format.
-  @return a regular string.
-}
-function DecodeString(Value: ansistring): ansistring;
+procedure CheckSQLiteError(const PlainDriver: IZSQLitePlainDriver;
+  const Handle: PSqlite; const ErrorCode: Integer; const ErrorMessage: PAnsiChar;
+  const LogCategory: TZLoggingCategory; const LogMessage: RawByteString;
+  const ConSettings: PZConSettings);
 
 {**
   Decodes a SQLite Version Value and Encodes it to a Zeos SQL Version format:
@@ -109,7 +95,8 @@ function ConvertSQLiteVersionToSQLVersion( const SQLiteVersion: PAnsiChar ): Int
 
 implementation
 
-uses ZMessages{$IFDEF DELPHI12_UP}, AnsiStrings{$ENDIF};
+uses {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings, {$ENDIF}
+  ZMessages, ZFastCode;
 
 {**
   Convert string SQLite field type to SQLType
@@ -118,90 +105,85 @@ uses ZMessages{$IFDEF DELPHI12_UP}, AnsiStrings{$ENDIF};
   @param Decimals the column position after decimal point
   @result the SQLType field type value
 }
-function ConvertSQLiteTypeToSQLType(TypeName: string; var Precision: Integer;
-  var Decimals: Integer; CharEncoding: TZCharEncoding;
-  const UTF8StringAsWideField: Boolean): TZSQLType;
+function ConvertSQLiteTypeToSQLType(TypeName: RawByteString;
+  const UndefinedVarcharAsStringLength: Integer; var Precision: Integer;
+  var Decimals: Integer; const CtrlsCPType: TZControlsCodePage): TZSQLType;
 var
   P1, P2: Integer;
-  Temp: string;
+  Temp: RawByteString;
 begin
-  TypeName := UpperCase(TypeName);
+  TypeName := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}UpperCase(TypeName);
   Result := stString;
   Precision := 0;
   Decimals := 0;
 
-  P1 := Pos('(', TypeName);
-  P2 := Pos(')', TypeName);
+  P1 := ZFastCode.Pos({$IFDEF UNICODE}RawByteString{$ENDIF}('('), TypeName);
+  P2 := ZFastCode.Pos({$IFDEF UNICODE}RawByteString{$ENDIF}(')'), TypeName);
   if (P1 > 0) and (P2 > 0) then
   begin
     Temp := Copy(TypeName, P1 + 1, P2 - P1 - 1);
     TypeName := Copy(TypeName, 1, P1 - 1);
-    P1 := Pos(',', Temp);
+    P1 := ZFastCode.Pos({$IFDEF UNICODE}RawByteString{$ENDIF}(','), Temp);
     if P1 > 0 then
     begin
-      Precision := StrToIntDef(Copy(Temp, 1, P1 - 1), 0);
-      Decimals := StrToIntDef(Copy(Temp, P1 + 1, Length(Temp) - P1), 0);
+      Precision := RawToIntDef(Copy(Temp, 1, P1 - 1), 0);
+      Decimals := RawToIntDef(Copy(Temp, P1 + 1, Length(Temp) - P1), 0);
     end
     else
-      Precision := StrToIntDef(Temp, 0);
+      Precision := RawToIntDef(Temp, 0);
   end;
 
-  if StartsWith(TypeName, 'BOOL') then
+  if StartsWith(TypeName, {$IFDEF UNICODE}RawByteString{$ENDIF}('BOOL')) then
     Result := stBoolean
-  else if TypeName = 'TINYINT' then
-    Result := stByte
-  else if TypeName = 'SMALLINT' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('TINYINT') then
     Result := stShort
-  else if TypeName = 'MEDIUMINT' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('SMALLINT') then
+    Result := stSmall
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('MEDIUMINT') then
     Result := stInteger
-  else if StartsWith(TypeName, 'INT') then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('INTEGER') then
+    Result := stLong //http://www.sqlite.org/autoinc.html
+  else if StartsWith(TypeName, {$IFDEF UNICODE}RawByteString{$ENDIF}('INT')) then
     Result := stInteger
-  else if TypeName = 'BIGINT' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('BIGINT') then
     Result := stLong
-  else if StartsWith(TypeName, 'REAL') then
+  else if StartsWith(TypeName, {$IFDEF UNICODE}RawByteString{$ENDIF}('REAL')) then
     Result := stDouble
-  else if StartsWith(TypeName, 'FLOAT') then
+  else if StartsWith(TypeName, {$IFDEF UNICODE}RawByteString{$ENDIF}('FLOAT')) then
     Result := stDouble
-  else if (TypeName = 'NUMERIC') or (TypeName = 'DECIMAL')
-    or (TypeName = 'NUMBER') then
+  else if (TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('NUMERIC')) or
+    (TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('DECIMAL'))
+      or (TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('NUMBER')) then
   begin
    { if Decimals = 0 then
       Result := stInteger
     else} Result := stDouble;
   end
-  else if StartsWith(TypeName, 'DOUB') then
+  else if StartsWith(TypeName, {$IFDEF UNICODE}RawByteString{$ENDIF}('DOUB')) then
     Result := stDouble
-  else if TypeName = 'MONEY' then
-    Result := stBigDecimal
-  else if StartsWith(TypeName, 'CHAR') then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('MONEY') then
+    Result := stCurrency
+  else if StartsWith(TypeName, {$IFDEF UNICODE}RawByteString{$ENDIF}('CHAR')) then
     Result := stString
-  else if TypeName = 'VARCHAR' then
-    case CharEncoding of  //SQLite supports only 2 OpenModes: either UTF8 or UTF16(le, be)
-      ceUTF8:
-        if UTF8StringAsWideField then
-          Result := stUnicodeString
-        else
-          Result := stString;
-      ceUTF16:
-        Result := stUnicodeString
-    end
-  else if TypeName = 'VARBINARY' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('VARCHAR') then
+    Result := stString
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('VARBINARY') then
     Result := stBytes
-  else if TypeName = 'BINARY' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('BINARY') then
     Result := stBytes
-  else if TypeName = 'DATE' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('DATE') then
     Result := stDate
-  else if TypeName = 'TIME' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('TIME') then
     Result := stTime
-  else if TypeName = 'TIMESTAMP' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('TIMESTAMP') then
     Result := stTimestamp
-  else if TypeName = 'DATETIME' then
+  else if TypeName = {$IFDEF UNICODE}RawByteString{$ENDIF}('DATETIME') then
     Result := stTimestamp
-  else if Pos('BLOB', TypeName) > 0 then
+  else if ZFastCode.Pos({$IFDEF UNICODE}RawByteString{$ENDIF}('BLOB'), TypeName) > 0 then
     Result := stBinaryStream
-  else if Pos('CLOB', TypeName) > 0 then
+  else if ZFastCode.Pos({$IFDEF UNICODE}RawByteString{$ENDIF}('CLOB'), TypeName) > 0 then
     Result := stAsciiStream
-  else if Pos('TEXT', TypeName) > 0 then
+  else if ZFastCode.Pos({$IFDEF UNICODE}RawByteString{$ENDIF}('TEXT'), TypeName) > 0 then
     Result := stAsciiStream;
 
   if (Result = stInteger) and (Precision <> 0) then
@@ -209,23 +191,32 @@ begin
     if Precision <= 2 then
       Result := stByte
     else if Precision <= 4 then
-      Result := stShort
+      Result := stSmall
     else if Precision <= 9 then
       Result := stInteger
     else
       Result := stLong;
   end;
 
-  if ((Result = stString) or (Result = stUnicodeString)) and (Precision = 0) then
-    Precision := 255;
-  if Result = stAsciiStream then
-    case CharEncoding of
-      ceUTF8, ceUTF16:
-        if UTF8StringAsWideField then
-          Result := stUnicodeStream
-        else
-          Result := stAsciiStream;
+  if (Result = stString) then
+    if  (Precision = 0) then
+      if (UndefinedVarcharAsStringLength = 0) then
+        Result := stAsciiStream
+      else
+        Precision := UndefinedVarcharAsStringLength;
+
+
+  if ( CtrlsCPType = cCP_UTF16 ) then
+    case Result of
+      stString:  Result := stUnicodeString;
+      stAsciiStream: Result := stUnicodeStream;
     end;
+
+  if (Result = stString) then
+    Precision := Precision shl {$IFDEF UNICODE}1{$ELSE}2{$ENDIF};//UTF8 assumes 4Byte/Char
+
+  if (Result = stUnicodeString) then
+    Precision := Precision shl 1;//shl 1 = * 2 but faster UTF8 assumes 4Byte/Char
 end;
 
 {**
@@ -236,131 +227,32 @@ end;
   @param LogCategory a logging category.
   @param LogMessage a logging message.
 }
-procedure CheckSQLiteError(PlainDriver: IZSQLitePlainDriver;
-  ErrorCode: Integer; ErrorMessage: PAnsiChar;
-  LogCategory: TZLoggingCategory; LogMessage: string);
+procedure CheckSQLiteError(const PlainDriver: IZSQLitePlainDriver;
+  const Handle: PSqlite; const ErrorCode: Integer; const ErrorMessage: PAnsiChar;
+  const LogCategory: TZLoggingCategory; const LogMessage: RawByteString;
+  const ConSettings: PZConSettings);
 var
-  Error: string;
+  Error: RawByteString;
 begin
   if ErrorMessage <> nil then
   begin
-  {$IFDEF DELPHI12_UP}
-    Error := trim(UTF8ToUnicodeString(ErrorMessage));
-  {$ELSE}
-    {$IFNDEF FPC}
-    Error := Trim(UTF8ToAnsi(StrPas(ErrorMessage)));
-    {$ELSE}
-    Error := Trim(StrPas(ErrorMessage));
-    {$ENDIF}
-  {$ENDIF}
-    //PlainDriver.FreeMem(ErrorMessage);
-    ErrorMessage:=nil;
+    Error := {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings.{$ENDIF}Trim(ErrorMessage);
+    PlainDriver.FreeMem(ErrorMessage);
   end
   else
     Error := '';
   if not (ErrorCode in [SQLITE_OK, SQLITE_ROW, SQLITE_DONE]) then
   begin
     if Error = '' then
-      Error := String(StrPas(PlainDriver.ErrorString(ErrorCode)));
-
-    DriverManager.LogError(LogCategory, PlainDriver.GetProtocol, LogMessage,
+      Error := PlainDriver.ErrorString(Handle, ErrorCode);
+    DriverManager.LogError(LogCategory, ConSettings^.Protocol, LogMessage,
       ErrorCode, Error);
-    raise EZSQLException.CreateWithCode(ErrorCode, Format(SSQLError1, [Error]));
+    raise EZSQLException.CreateWithCode(ErrorCode, Format(SSQLError1,
+      [ConSettings.ConvFuncs.ZRawToString(Error, ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP)]));
   end;
 end;
 
 
-function NewEncodeString(Value: ansistring): ansistring;
-var
-  I: Integer;
-  SrcLength: Integer;
-  SrcBuffer: PAnsiChar;
-  ihx : integer;
-  shx : ansistring;
-begin
-  SrcLength := Length(Value);
-  SrcBuffer := PAnsiChar(Value);
-  SetLength( Result,3 + SrcLength * 2 );
-  Result[1] := 'x'; // set x
-  Result[2] := ''''; // set Open Quote
-  ihx := 3; // set 1st hex location
-  for I := 1 to SrcLength do
-  begin
-    shx := AnsiString(IntToHex( ord(SrcBuffer^),2 )); // eg. '3E'
-    result[ihx] := shx[1]; Inc( ihx,1 ); // copy '3'
-    result[ihx] := shx[2]; Inc( ihx,1 ); // copy 'E'
-    Inc( SrcBuffer,1 ); // next byte source location
-  end;
-  result[ihx] := ''''; // set Close Quote
-end;
-
-function NewDecodeString(Value:ansistring):ansistring;
-  var
-    i : integer;
-    srcbuffer : PAnsichar;
-  begin
-    value := copy(value,3,length(value)-4);
-    value := {$IFDEF DELPHI12_UP}AnsiStrings.{$ENDIF}AnsiLowercase(value);
-    i := length(value) div 2;
-    srcbuffer := PAnsiChar(value);
-    setlength(result,i);
-    HexToBin(PAnsiChar(srcbuffer),PAnsiChar(result),i);
-end;
-
-{**
-  Converts an string into escape PostgreSQL format.
-  @param Value a regular string.
-  @return a string in PostgreSQL escape format.
-}
-function EncodeString(Value: ansistring): ansistring;
-begin
-  result := NewEncodeString(Value);
-end;
-
-{**
-  Converts an string from escape PostgreSQL format.
-  @param Value a string in PostgreSQL escape format.
-  @return a regular string.
-}
-function DecodeString(Value: ansistring): ansistring;
-var
-  SrcLength, DestLength: Integer;
-  SrcBuffer, DestBuffer: PAnsiChar;
-begin
-  if pos('x''',String(value))= 1 then
-    result := NewDecodeString(value)
-  else
-  begin
-    SrcLength := Length(Value);
-    SrcBuffer := PAnsiChar(Value);
-    SetLength(Result, SrcLength);
-    DestLength := 0;
-    DestBuffer := PAnsiChar(Result);
-
-    while SrcLength > 0 do
-    begin
-      if SrcBuffer^ = '%' then
-      begin
-        Inc(SrcBuffer);
-        if SrcBuffer^ <> '0' then
-          DestBuffer^ := SrcBuffer^
-        else
-          DestBuffer^ := #0;
-        Inc(SrcBuffer);
-        Dec(SrcLength, 2);
-      end
-      else
-      begin
-        DestBuffer^ := SrcBuffer^;
-        Inc(SrcBuffer);
-        Dec(SrcLength);
-      end;
-      Inc(DestBuffer);
-      Inc(DestLength);
-    end;
-    SetLength(Result, DestLength);
-  end;
-end;
 
 {**
   Decodes a SQLite Version Value and Encodes it to a Zeos SQL Version format:
@@ -371,16 +263,17 @@ end;
 }
 function ConvertSQLiteVersionToSQLVersion( const SQLiteVersion: PAnsiChar ): Integer;
 var
-   MajorVersion, MinorVersion, SubVersion: Integer;
+  MajorVersion, MinorVersion, SubVersion: Integer;
   s:string;
 begin
-  s:=SQLiteVersion;
-  MajorVersion:=StrToIntDef(copy(s,1,pos('.',s)-1),0);
-  delete(s,1,pos('.',s));
-  MinorVersion:=StrToIntDef(copy(s,1,pos('.',s)-1),0);
-  delete(s,1,pos('.',s));
+  s:=String(SQLiteVersion);
+  MajorVersion:=StrToIntDef(copy(s,1,ZFastCode.pos('.',s)-1),0);
+  delete(s,1,ZFastCode.pos('.',s));
+  MinorVersion:=StrToIntDef(copy(s,1,ZFastCode.pos('.',s)-1),0);
+  delete(s,1,ZFastCode.pos('.',s));
   SubVersion:=StrToIntDef(s,0);
   Result := EncodeSQLVersioning(MajorVersion,MinorVersion,SubVersion);
 end;
 
 end.
+

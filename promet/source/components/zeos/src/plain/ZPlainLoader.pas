@@ -1,4 +1,4 @@
-{*********************************************************}
+  {*********************************************************}
 {                                                         }
 {                 Zeos Database Objects                   }
 {          Utility Classes for Native Libraries           }
@@ -8,7 +8,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -40,12 +40,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -57,9 +55,16 @@ interface
 
 {$I ZPlain.inc}
 
-uses Types, ZCompatibility;
+uses Types,
+{$IFDEF FPC}
+  dynlibs,
+{$ENDIF}
+  ZCompatibility;
 
 type
+  {$IFDEF FPC}
+  THandle = TLibHandle;
+  {$ENDIF}
   {** Implements a loader for native library. }
 
   { TZNativeLibraryLoader }
@@ -67,11 +72,7 @@ type
   TZNativeLibraryLoader = class (TObject)
   private
     FLocations: TStringDynArray;
-  {$IFDEF FPC}
-    FHandle: PtrInt;
-  {$ELSE}
     FHandle: THandle;  //M.A. LongWord;
-  {$ENDIF}
     FLoaded: Boolean;
     FCurrentLocation: String;
     function ZLoadLibrary(Location: String): Boolean;
@@ -89,11 +90,7 @@ type
     procedure LoadIfNeeded; virtual;
 
     property Loaded: Boolean read FLoaded write FLoaded;
-  {$IFDEF FPC}
-    property Handle: PtrInt read FHandle write FHandle;
-  {$ELSE}
     property Handle: THandle { M.A. LongWord} read FHandle write FHandle;
-  {$ENDIF}
     property CurrentLocation: String read FCurrentLocation write FCurrentLocation;
     function GetAddress(ProcName: PAnsiChar): Pointer;
   end;
@@ -175,28 +172,44 @@ begin
 end;
 
 function TZNativeLibraryLoader.ZLoadLibrary(Location: String): Boolean;
+var newpath, temp: String; // AB modif
 begin
-   if FLoaded then
-      Self.FreeNativeLibrary;
-   FLoaded := False;
-   Result := False;
+  if FLoaded then
+    Self.FreeNativeLibrary;
+  temp := ''; //init for FPC
+  FLoaded := False;
+  Result := False;
+  newpath := ExtractFilePath(Location);
+  // AB modif BEGIN
+  try
+   if newpath <> '' then begin
+     temp := GetCurrentDir;
+     SetCurrentDir(newpath);
+   end;
+  // AB modif END
 
 {$IFDEF UNIX}
   {$IFDEF FPC}
-        FHandle := LoadLibrary(PAnsiChar(Location));
+    FHandle := LoadLibrary(PAnsiChar(Location));
   {$ELSE}
-        FHandle := HMODULE(dlopen(PAnsiChar(Location), RTLD_GLOBAL));
+    FHandle := HMODULE(dlopen(PAnsiChar(Location), RTLD_GLOBAL));
   {$ENDIF}
 {$ELSE}
-        FHandle := LoadLibrary(PChar(Location));
+  FHandle := LoadLibrary(PChar(Location));
 {$ENDIF}
 
-   if (FHandle <> INVALID_HANDLE_VALUE) and (FHandle <> 0) then
-   begin
-      FLoaded := True;
-      FCurrentLocation := Location;
-      Result := True;
-   end;
+  // AB modif BEGIN
+  finally
+   if temp<>'' then
+     SetCurrentDir(temp);
+  end;
+  // AB modif END
+  if (FHandle <> INVALID_HANDLE_VALUE) and (FHandle <> 0) then
+  begin
+    FLoaded := True;
+    FCurrentLocation := Location;
+    Result := True;
+  end;
 end;
 {**
   Loads a library module and initializes the handle.
@@ -210,7 +223,7 @@ begin
   TriedLocations := '';
   for I := 0 to High(FLocations) do
     begin
-      if ZLoadLibrary(FLocations[I]) or ZLoadLibrary('/usr/lib/x86_64-linux-gnu/'+FLocations[I]) then
+      if ZLoadLibrary(FLocations[I]) then
         Break
       else
         if TriedLocations <> '' then
@@ -220,13 +233,19 @@ begin
     end;
 
   if not Loaded then
-    raise Exception.Create(Format(SLibraryNotFound, [TriedLocations]));
+    if (Length(FLocations) > 0) and FileExists(FLocations[High(FLocations)]) then
+      raise Exception.Create(Format(SLibraryNotCompatible, [TriedLocations]))
+    else
+      raise Exception.Create(Format(SLibraryNotFound, [TriedLocations]));
   Result := True;
 end;
 
 function TZNativeLibraryLoader.LoadNativeLibraryStrict(Location: String): Boolean;
 begin
   If not ZLoadLibrary(Location) then
+    if FileExists(Location) then
+      raise Exception.Create(Format(SLibraryNotCompatible, [Location]))
+    else
       raise Exception.Create(Format(SLibraryNotFound, [Location]));
   Result := True;
 end;
@@ -254,5 +273,6 @@ begin
 end;
 
 end.
+
 
 

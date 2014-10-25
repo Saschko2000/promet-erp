@@ -9,7 +9,7 @@
 {*********************************************************}
 
 {@********************************************************}
-{    Copyright (c) 1999-2006 Zeos Development Group       }
+{    Copyright (c) 1999-2012 Zeos Development Group       }
 {                                                         }
 { License Agreement:                                      }
 {                                                         }
@@ -41,12 +41,10 @@
 {                                                         }
 { The project web site is located on:                     }
 {   http://zeos.firmos.at  (FORUM)                        }
-{   http://zeosbugs.firmos.at (BUGTRACKER)                }
-{   svn://zeos.firmos.at/zeos/trunk (SVN Repository)      }
+{   http://sourceforge.net/p/zeoslib/tickets/ (BUGTRACKER)}
+{   svn://svn.code.sf.net/p/zeoslib/code-0/trunk (SVN)    }
 {                                                         }
 {   http://www.sourceforge.net/projects/zeoslib.          }
-{   http://www.zeoslib.sourceforge.net                    }
-{                                                         }
 {                                                         }
 {                                                         }
 {                                 Zeos Development Group. }
@@ -59,8 +57,9 @@ interface
 {$I ZDbc.inc}
 
 uses
-  Classes, SysUtils, Types, ZSysUtils, ZDbcIntfs, ZPlainASADriver, ZDbcLogging,
-  ZCompatibility, ZDbcASA, ZDbcStatement, ZVariant;   // SQLTimSt, FmtBCD,
+  Classes, {$IFDEF MSEgui}mclasses,{$ENDIF} SysUtils, Types,
+  ZSysUtils, ZDbcIntfs, ZPlainASADriver, ZDbcLogging, ZCompatibility, ZDbcASA,
+  ZDbcStatement, ZVariant, ZPlainASAConstants;
 
 const
   StdVars = 20;
@@ -73,7 +72,7 @@ type
 
   TZASADECLTYPE = record
     sqlType: SmallInt;
-    sqlLen : Word;
+    sqlLen : NativeUInt;
   end;
 
   { Base interface for sqlda }
@@ -88,7 +87,7 @@ type
     function IsNullable(const Index: Word): boolean;
 
     function GetFieldCount: Integer;
-    function GetFieldName(const Index: Word): string;
+    function GetFieldName(const Index: Word): RawByteString;
     function GetFieldIndex(const Name: String): Word;
     function GetFieldScale(const Index: Word): integer;
     function GetFieldSqlType(const Index: Word): TZSQLType;
@@ -96,65 +95,71 @@ type
 
     procedure UpdateNull(const Index: Integer; Value: boolean);
     procedure UpdateBoolean(const Index: Integer; Value: boolean);
-    procedure UpdateByte(const Index: Integer; Value: ShortInt);
-    procedure UpdateShort(const Index: Integer; Value: SmallInt);
+    procedure UpdateByte(const Index: Integer; Value: Byte);
+    procedure UpdateShort(const Index: Integer; Value: ShortInt);
+    procedure UpdateSmall(const Index: Integer; Value: SmallInt);
+    procedure UpdateWord(const Index: Integer; Value: Word);
     procedure UpdateInt(const Index: Integer; Value: Integer);
+    procedure UpdateUInt(const Index: Integer; Value: LongWord);
     procedure UpdateLong(const Index: Integer; Value: Int64);
+    procedure UpdateULong(const Index: Integer; Value: UInt64);
     procedure UpdateFloat(const Index: Integer; Value: Single);
     procedure UpdateDouble(const Index: Integer; Value: Double);
     procedure UpdateBigDecimal(const Index: Integer; Value: Extended);
-    procedure UpdatePChar(const Index: Integer; Value: PChar);
-    procedure UpdateString(const Index: Integer; Value: AnsiString);
-    procedure UpdateBytes(const Index: Integer; Value: TByteDynArray);
+    procedure UpdatePRaw(const Index: Integer; Value: PAnsiChar; Len: NativeUInt);
+    procedure UpdateBytes(const Index: Integer; Value: TBytes);
     procedure UpdateDate(const Index: Integer; Value: TDateTime);
     procedure UpdateTime(const Index: Integer; Value: TDateTime);
     procedure UpdateTimestamp(const Index: Integer; Value: TDateTime);
-    procedure UpdateValue(const Index: Word; Value: Variant);
-    procedure WriteBlob(const Index: Integer; Stream: TStream);
+    procedure WriteBlob(const Index: Integer; Stream: TStream; const BlobType: TZSQLType);
 
     function IsNull(const Index: Integer): Boolean;
     function IsAssigned(const Index: Integer): Boolean;
     function GetBoolean(const Index: Integer): Boolean;
-    function GetByte(const Index: Integer): ShortInt;
-    function GetShort(const Index: Integer): SmallInt;
+    function GetByte(const Index: Integer): Byte;
+    function GetShort(const Index: Integer): ShortInt;
+    function GetWord(const Index: Integer): Word;
+    function GetSmall(const Index: Integer): SmallInt;
+    function GetUInt(const Index: Integer): LongWord;
     function GetInt(const Index: Integer): Integer;
+    function GetULong(const Index: Integer): UInt64;
     function GetLong(const Index: Integer): Int64;
     function GetFloat(const Index: Integer): Single;
     function GetDouble(const Index: Integer): Double;
     function GetBigDecimal(const Index: Integer): Extended;
-    function GetPChar(const Index: Integer): PAnsiChar;
-    function GetString(const Index: Integer): string;
-    function GetBytes(const Index: Integer): TByteDynArray;
+    function GetPRaw(const Index: Integer; out Len: NativeUInt): PAnsiChar;
+    function GetBytes(const Index: Integer): TBytes;
     function GetDate(const Index: Integer): TDateTime;
     function GetTime(const Index: Integer): TDateTime;
     function GetTimestamp(const Index: Integer): TDateTime;
-    function GetValue(const Index: Word): Variant;
 
-    procedure ReadBlobToMem(const Index: Word; var Buffer: Pointer; var Length: LongWord);
-    procedure ReadBlobToStream(const Index: Word; Stream: TStream);
-    procedure ReadBlobToString(const Index: Word; var str: string);
-    procedure ReadBlobToVariant(const Index: Word; var Value: Variant);
+    procedure ReadBlobToMem(const Index: Word; var Buffer: Pointer; var Length: NativeUInt; const Binary: Boolean = True);
+    procedure ReadBlobToString(const Index: Word; var str: RawByteString);
   end;
 
   { Base class contain core functions to work with sqlda structure
     Can allocate memory for sqlda structure get basic information }
-  TZASASQLDA = class (TZCodePagedObject, IZASASQLDA)
+  TZASASQLDA = class (TInterfacedObject, IZASASQLDA)
   private
+    FConSettings: PZConSettings;
     FSQLDA: PASASQLDA;
     FPlainDriver: IZASAPlainDriver;
     FHandle: PZASASQLCA;
-    FCursorName: AnsiString;
+    FCursorName: PAnsiChar;
+    FRawTemp: RawByteString;
     procedure CreateException( Msg: string);
     procedure CheckIndex(const Index: Word);
     procedure CheckRange(const Index: Word);
     procedure SetFieldType(const Index: Word; ASAType: Smallint; Len: LongWord;
-      SetDeclType: Boolean = true);
+      SetDeclType: Boolean = true); overload;
+    procedure SetFieldType(ToSQLDA: PASASQLDA; const Index: Word; ASAType: Smallint; Len: LongWord;
+      SetDeclType: Boolean = true); overload;
   protected
     FDeclType: array of TZASADECLTYPE;
     procedure ReadBlob(const Index: Word; Buffer: Pointer; Length: LongWord);
   public
     constructor Create(PlainDriver: IZASAPlainDriver; Handle: PZASASQLCA;
-      CursorName: AnsiString; ClientCodePage: PZCodePage; NumVars: Word = StdVars);
+      CursorName: PAnsiChar; ConSettings: PZConSettings; NumVars: Word = StdVars);
     destructor Destroy; override;
 
     procedure AllocateSQLDA( NumVars: Word);
@@ -166,7 +171,7 @@ type
     function IsNullable(const Index: Word): boolean;
 
     function GetFieldCount: Integer;
-    function GetFieldName(const Index: Word): string;
+    function GetFieldName(const Index: Word): RawByteString;
     function GetFieldIndex(const Name: String): Word;
     function GetFieldScale(const Index: Word): Integer;
     function GetFieldSqlType(const Index: Word): TZSQLType;
@@ -174,45 +179,47 @@ type
 
     procedure UpdateNull(const Index: Integer; Value: boolean);
     procedure UpdateBoolean(const Index: Integer; Value: boolean);
-    procedure UpdateByte(const Index: Integer; Value: ShortInt);
-    procedure UpdateShort(const Index: Integer; Value: SmallInt);
+    procedure UpdateByte(const Index: Integer; Value: Byte);
+    procedure UpdateShort(const Index: Integer; Value: ShortInt);
+    procedure UpdateSmall(const Index: Integer; Value: SmallInt);
+    procedure UpdateWord(const Index: Integer; Value: Word);
     procedure UpdateInt(const Index: Integer; Value: Integer);
+    procedure UpdateUInt(const Index: Integer; Value: LongWord);
     procedure UpdateLong(const Index: Integer; Value: Int64);
+    procedure UpdateULong(const Index: Integer; Value: UInt64);
     procedure UpdateFloat(const Index: Integer; Value: Single);
     procedure UpdateDouble(const Index: Integer; Value: Double);
     procedure UpdateBigDecimal(const Index: Integer; Value: Extended);
-    procedure UpdatePChar(const Index: Integer; Value: PChar);
-    procedure UpdateString(const Index: Integer; Value: AnsiString);
-    procedure UpdateBytes(const Index: Integer; Value: TByteDynArray);
+    procedure UpdatePRaw(const Index: Integer; Value: PAnsiChar; Len: NativeUInt);
+    procedure UpdateBytes(const Index: Integer; Value: TBytes);
     procedure UpdateDate(const Index: Integer; Value: TDateTime);
     procedure UpdateTime(const Index: Integer; Value: TDateTime);
-    procedure UpdateDateTime(const Index: Integer; Value: TDateTime);
     procedure UpdateTimestamp(const Index: Integer; Value: TDateTime);
-    procedure UpdateValue(const Index: Word; Value: Variant);
-    procedure WriteBlob(const Index: Integer; Stream: TStream);
+    procedure UpdateDateTime(const Index: Integer; Value: TDateTime);
+    procedure WriteBlob(const Index: Integer; Stream: TStream; const BlobType: TZSQLType);
 
     function IsNull(const Index: Integer): Boolean;
     function IsAssigned(const Index: Integer): Boolean;
     function GetBoolean(const Index: Integer): Boolean;
-    function GetByte(const Index: Integer): ShortInt;
-    function GetShort(const Index: Integer): SmallInt;
+    function GetByte(const Index: Integer): Byte;
+    function GetShort(const Index: Integer): ShortInt;
+    function GetWord(const Index: Integer): Word;
+    function GetSmall(const Index: Integer): SmallInt;
+    function GetUInt(const Index: Integer): LongWord;
     function GetInt(const Index: Integer): Integer;
+    function GetULong(const Index: Integer): UInt64;
     function GetLong(const Index: Integer): Int64;
     function GetFloat(const Index: Integer): Single;
     function GetDouble(const Index: Integer): Double;
     function GetBigDecimal(const Index: Integer): Extended;
-    function GetPChar(const Index: Integer): PAnsiChar;
-    function GetString(const Index: Integer): string;
-    function GetBytes(const Index: Integer): TByteDynArray;
+    function GetPRaw(const Index: Integer; out Len: NativeUInt): PAnsiChar;
+    function GetBytes(const Index: Integer): TBytes;
     function GetDate(const Index: Integer): TDateTime;
     function GetTime(const Index: Integer): TDateTime;
     function GetTimestamp(const Index: Integer): TDateTime;
-    function GetValue(const Index: Word): Variant;
 
-    procedure ReadBlobToMem(const Index: Word; var Buffer: Pointer; var Length: LongWord);
-    procedure ReadBlobToStream(const Index: Word; Stream: TStream);
-    procedure ReadBlobToString(const Index: Word; var str: string);
-    procedure ReadBlobToVariant(const Index: Word; var Value: Variant);
+    procedure ReadBlobToMem(const Index: Word; var Buffer: Pointer; var Length: NativeUInt; const Binary: Boolean = True);
+    procedure ReadBlobToString(const Index: Word; var str: RawByteString);
   end;
 
 {**
@@ -220,7 +227,7 @@ type
   @param FieldHandle a handler to field description structure.
   @return a SQL undepended type.
 }
-function ConvertASATypeToSQLType( SQLType: SmallInt): TZSQLType;
+function ConvertASATypeToSQLType(const SQLType: SmallInt; const CtrlsCPType: TZControlsCodePage): TZSQLType;
 
 {**
   Converts a ASA native type into String.
@@ -229,7 +236,8 @@ function ConvertASATypeToSQLType( SQLType: SmallInt): TZSQLType;
 }
 function ConvertASATypeToString( SQLType: SmallInt): String;
 
-function ConvertASAJDBCToSqlType( FieldType: SmallInt): TZSQLType;
+function ConvertASAJDBCToSqlType(const FieldType: SmallInt;
+  CtrlsCPType: TZControlsCodePage): TZSQLType;
 {
 procedure TSQLTimeStampToASADateTime( DT: TSQLTimeStamp; const ASADT: PZASASQLDateTime);
 function ASADateTimeToSQLTimeStamp( ASADT: PZASASQLDateTime): TSQLTimeStamp;
@@ -241,33 +249,37 @@ function ASADateTimeToSQLTimeStamp( ASADT: PZASASQLDateTime): TSQLTimeStamp;
   @param LogCategory a logging category.
   @param LogMessage a logging message.
 }
-procedure CheckASAError(PlainDriver: IZASAPlainDriver;
-  Handle: PZASASQLCA; LogCategory: TZLoggingCategory; LogMessage: string = '');
+procedure CheckASAError(const PlainDriver: IZASAPlainDriver;
+  const Handle: PZASASQLCA; const LogCategory: TZLoggingCategory;
+  const ConSettings: PZConSettings; const LogMessage: RawByteString = '';
+  const SupressExceptionID: Integer = 0);
 
 function GetCachedResultSet(SQL: string;
   Statement: IZStatement; NativeResultSet: IZResultSet): IZResultSet;
 
 procedure DescribeCursor( FASAConnection: IZASAConnection; FSQLData: IZASASQLDA;
-  Cursor: AnsiString; SQL: String);
+  Cursor: AnsiString; SQL: RawByteString);
 
 procedure ASAPrepare( FASAConnection: IZASAConnection; FSQLData, FParamsSQLData: IZASASQLDA;
-   const SQL: String; StmtNum: PSmallInt; var FPrepared, FMoreResults: Boolean);
+   const SQL: RawByteString; StmtNum: PSmallInt; var FPrepared, FMoreResults: Boolean);
 
-procedure PrepareParameters( PlainDriver: IZASAPlainDriver;
+procedure PrepareParameters( ClientVarManager: IZClientVariantManager;
   InParamValues: TZVariantDynArray; InParamTypes: TZSQLTypeArray;
-  InParamCount: Integer; ParamSqlData: IZASASQLDA);
+  InParamCount: Integer; ParamSqlData: IZASASQLDA;
+  ConSettings: PZConSettings);
 
 function RandomString( Len: integer): string;
 
 implementation
 
-uses Variants, ZMessages, ZDbcCachedResultSet, Math;
+uses Variants, Math, {$IFDEF WITH_UNITANSISTRINGS}AnsiStrings, {$ENDIF}
+  ZFastCode, ZMessages, ZDbcCachedResultSet, ZEncoding, ZDbcUtils;
 
 { TZASASQLDA }
 
 procedure TZASASQLDA.CreateException( Msg: string);
 begin
-  DriverManager.LogError( lcOther, FPlainDriver.GetProtocol, '', -1, Msg);
+  DriverManager.LogError( lcOther, FConSettings^.Protocol, '', -1, ConvertEMsgToRaw(Msg, FConSettings^.ClientCodePage^.CP));
   raise EZSQLException.Create( Format( SSQLError1, [ Msg]));
 end;
 
@@ -278,7 +290,7 @@ end;
 procedure TZASASQLDA.CheckIndex(const Index: Word);
 begin
   Assert( Assigned( FSQLDA), 'SQLDA not initialized.');
-  Assert( Index < FSQLDA.sqld, 'Out of Range.');
+  Assert( Index < Word(FSQLDA.sqld), 'Out of Range.');
 end;
 
 procedure TZASASQLDA.CheckRange(const Index: Word);
@@ -288,13 +300,14 @@ begin
     'No memory for variable in SQLDA.');
 end;
 
-procedure TZASASQLDA.SetFieldType(const Index: Word; ASAType: Smallint;
-  Len: LongWord; SetDeclType: Boolean = true);
+procedure TZASASQLDA.SetFieldType(ToSQLDA: PASASQLDA; const Index: Word;
+  ASAType: Smallint; Len: LongWord; SetDeclType: Boolean = true);
 begin
   CheckIndex(Index);
-  with FSQLDA.sqlvar[Index] do
+  with ToSQLDA.sqlvar[Index] do
   begin
     if ( ASAType and $FFFE = DT_LONGBINARY) or
+       ( ASAType and $FFFE = DT_LONGNVARCHAR) or
        ( ASAType and $FFFE = DT_LONGVARCHAR) then
     begin
       if Assigned( sqlData) then
@@ -330,14 +343,20 @@ begin
   end;
 end;
 
+procedure TZASASQLDA.SetFieldType(const Index: Word; ASAType: Smallint;
+  Len: LongWord; SetDeclType: Boolean = true);
+begin
+  SetFieldType(FSQLDA, Index, ASAType, Len, SetDeclType);
+end;
+
 constructor TZASASQLDA.Create(PlainDriver: IZASAPlainDriver; Handle: PZASASQLCA;
-   CursorName: AnsiString; ClientCodePage: PZCodePage; NumVars: Word = StdVars);
+   CursorName: PAnsiChar; ConSettings: PZConSettings; NumVars: Word = StdVars);
 begin
   FPlainDriver := PlainDriver;
   FHandle := Handle;
   FCursorName := CursorName;
-  AllocateSQLDA( NumVars);
-  Self.ClientCodePage := ClientCodePage;
+  AllocateSQLDA(NumVars);
+  FConSettings := ConSettings;
   inherited Create;
 end;
 
@@ -355,9 +374,8 @@ procedure TZASASQLDA.AllocateSQLDA( NumVars: Word);
 begin
   FreeSQLDA;
   FSQLDA := FPlainDriver.db_alloc_sqlda( NumVars);
-  if not Assigned( FSQLDA) then
-    CreateException( 'Not enough memory for SQLDA');
-  SetLength( FDeclType, FSQLDA.sqln);
+  if not Assigned( FSQLDA) then CreateException( 'Not enough memory for SQLDA');
+  SetLength(FDeclType, FSQLDA.sqln);
 end;
 
 {**
@@ -428,12 +446,17 @@ begin
   begin
     for i := 0 to FSQLDA.sqln-1 do
     begin
+      FSQLDA.sqlVar[i].sqlInd := nil;
       if Assigned( FSQLDA.sqlVar[i].sqlData) then
+      begin
         FreeMem( FSQLDA.sqlVar[i].sqlData);
+        FSQLDA.sqlVar[i].sqlData := nil;
+      end;
     end;
     FPlainDriver.db_free_sqlda( FSQLDA);
     FSQLDA := nil;
   end;
+  SetLength(FDeclType, 0);
   FDeclType := nil;
 end;
 
@@ -484,11 +507,16 @@ end;
    @param Index the index fields
    @return the name
 }
-function TZASASQLDA.GetFieldName(const Index: Word): string;
+function TZASASQLDA.GetFieldName(const Index: Word): RawByteString;
 begin
   CheckIndex(Index);
+  {$IFDEF WITH_RAWBYTESTRING}
+  Result := '';
+  ZSetString(FSQLDA.sqlvar[Index].sqlname.data, FSQLDA.sqlvar[Index].sqlname.length-1, Result);
+  {$ELSE}
   SetString( Result, FSQLDA.sqlvar[Index].sqlname.data,
     FSQLDA.sqlvar[Index].sqlname.length-1);
+  {$ENDIF}
 end;
 
 {**
@@ -500,11 +528,8 @@ function TZASASQLDA.GetFieldIndex(const Name: String): Word;
 begin
   for Result := 0 to FSQLDA.sqld - 1 do
     if FSQLDA.sqlvar[Result].sqlname.length = Length(name) then
-      {$IFDEF DELPHI12_UP}
-      if StrLIComp(@FSQLDA.sqlvar[Result].sqlname.data, PAnsiChar(UTF8String(Name)), Length(name)) = 0 then
-      {$ELSE}
-      if StrLIComp(@FSQLDA.sqlvar[Result].sqlname.data, PAnsiChar(Name), Length(name)) = 0 then
-      {$ENDIF} 
+      if {$IFDEF WITH_STRLICOMP_DEPRECATED}AnsiStrings.{$ENDIF}StrLIComp(@FSQLDA.sqlvar[Result].sqlname.data, PAnsiChar(FConSettings^.ConvFuncs.ZStringToRaw(Name,
+            FConSettings^.CTRL_CP, FConSettings^.ClientCodePage^.CP)), Length(name)) = 0 then
             Exit;
   CreateException( Format( SFieldNotFound1, [name]));
   Result := 0; // satisfy compiler
@@ -521,7 +546,7 @@ begin
   if FSQLDA.sqlvar[Index].sqlType and $FFFE <> DT_DECIMAL then
     Result := FSQLDA.sqlvar[Index].sqlLen
   else
-    Result := (FSQLDA.sqlvar[Index].sqlLen and $FF) div 2 + 1;
+    Result := (FSQLDA.sqlvar[Index].sqlLen and $FF) shr 1 + 1; //shr 1 = div 2 but faster
 end;
 
 {**
@@ -547,9 +572,11 @@ function TZASASQLDA.GetFieldSqlType(const Index: Word): TZSQLType;
 begin
   CheckIndex(Index);
   if FSQLDA.sqlvar[Index].sqlType and $FFFE <> DT_TIMESTAMP_STRUCT then
-    Result := ConvertASATypeToSQLType( FSQLDA.sqlvar[Index].sqlType)
+    Result := ConvertASATypeToSQLType(FSQLDA.sqlvar[Index].sqlType,
+      FConSettings.CPType)
   else
-    Result := ConvertASATypeToSQLType( FDeclType[Index].sqlType)
+    Result := ConvertASATypeToSQLType( FDeclType[Index].sqlType,
+      FConSettings.CPType)
 end;
 
 {**
@@ -578,30 +605,10 @@ end;
 }
 procedure TZASASQLDA.UpdateBoolean(const Index: Integer; Value: boolean);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_BIT or 1, SizeOf( Byte));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := ord(Value);
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := ord(Value);
-      DT_FLOAT            : PSingle(sqldata)^ := ord(Value);
-      DT_DOUBLE           : PDouble(sqldata)^ := ord(Value);
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length := 1;
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                IntToStr( ord( Value)), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := ord(Value);
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := ord(Value);
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PByte(sqldata)^ := Ord(Value);
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -612,33 +619,28 @@ end;
    @param Index the target parameter index
    @param Value the source value
 }
-procedure TZASASQLDA.UpdateByte(const Index: Integer; Value: ShortInt);
+procedure TZASASQLDA.UpdateByte(const Index: Integer; Value: Byte);
 begin
-  CheckIndex( Index);
-  SetFieldType( Index, DT_TINYINT or 1, SizeOf( Byte));
+  SetFieldType( Index, DT_BIT or 1, SizeOf( Byte));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := Value;
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Value;
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( IntToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                IntToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Value;
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Value;
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PByte(sqldata)^ := Value;
+    if (sqlind <> nil) then
+       sqlind^ := 0; // not null
+  end;
+end;
+
+{**
+   Set up parameter Byte value
+   @param Index the target parameter index
+   @param Value the source value
+}
+procedure TZASASQLDA.UpdateShort(const Index: Integer; Value: ShortInt);
+begin
+  SetFieldType( Index, DT_TINYINT or 1, SizeOf(ShortInt));
+  with FSQLDA.sqlvar[Index] do
+  begin
+    PShortInt(sqldata)^ := Value;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -649,33 +651,28 @@ end;
    @param Index the target parameter index
    @param Value the source value
 }
-procedure TZASASQLDA.UpdateShort(const Index: Integer; Value: SmallInt);
+procedure TZASASQLDA.UpdateSmall(const Index: Integer; Value: SmallInt);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_SMALLINT or 1, SizeOf( SmallInt));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallInt(sqldata)^ := Value;
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Value;
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( IntToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                IntToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Value;
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Value;
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PSmallInt(sqldata)^ := Value;
+    if (sqlind <> nil) then
+       sqlind^ := 0; // not null
+  end;
+end;
+
+{**
+   Set up parameter short value
+   @param Index the target parameter index
+   @param Value the source value
+}
+procedure TZASASQLDA.UpdateWord(const Index: Integer; Value: Word);
+begin
+  SetFieldType( Index, DT_UNSSMALLINT or 1, SizeOf(Word));
+  with FSQLDA.sqlvar[Index] do
+  begin
+    PWord(sqldata)^ := Value;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -688,31 +685,26 @@ end;
 }
 procedure TZASASQLDA.UpdateInt(const Index: Integer; Value: Integer);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_INT or 1, SizeOf( Integer));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := Value;
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Value;
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( IntToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                IntToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Value;
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Value;
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PInteger(sqldata)^ := Value;
+    if (sqlind <> nil) then
+       sqlind^ := 0; // not null
+  end;
+end;
+
+{**
+   Set up parameter integer value
+   @param Index the target parameter index
+   @param Value the source value
+}
+procedure TZASASQLDA.UpdateUInt(const Index: Integer; Value: LongWord);
+begin
+  SetFieldType( Index, DT_UNSINT or 1, SizeOf(LongWord));
+  with FSQLDA.sqlvar[Index] do
+  begin
+    PLongWord(sqldata)^ := Value;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -725,31 +717,26 @@ end;
 }
 procedure TZASASQLDA.UpdateLong(const Index: integer; Value: Int64);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_BIGINT or 1, SizeOf( Int64));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := Value;
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Value;
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( IntToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                IntToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Value;
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Value;
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PInt64(sqldata)^ := Value;
+    if (sqlind <> nil) then
+       sqlind^ := 0; // not null
+  end;
+end;
+
+{**
+   Set up parameter Long value
+   @param Index the target parameter index
+   @param Value the source value
+}
+procedure TZASASQLDA.UpdateULong(const Index: integer; Value: UInt64);
+begin
+  SetFieldType( Index, DT_UNSBIGINT or 1, SizeOf(UInt64));
+  with FSQLDA.sqlvar[Index] do
+  begin
+    PUInt64(sqldata)^ := Value;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -762,31 +749,10 @@ end;
 }
 procedure TZASASQLDA.UpdateFloat(const Index: Integer; Value: Single);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_FLOAT or 1, SizeOf( Single));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := Trunc( Value);
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Trunc( Value);
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( FloatToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                FloatToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Trunc( Value);
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Trunc( Value);
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PSingle(sqldata)^ := Trunc(Value);
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -799,31 +765,10 @@ end;
 }
 procedure TZASASQLDA.UpdateDouble(const Index: Integer; Value: Double);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_DOUBLE or 1, SizeOf( Double));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := Trunc( Value);
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Trunc( Value);
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( FloatToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                FloatToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Trunc( Value);
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Trunc( Value);
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PDouble(sqldata)^ := Value;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -836,72 +781,10 @@ end;
 }
 procedure TZASASQLDA.UpdateBigDecimal(const Index: Integer; Value: Extended);
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_DOUBLE or 1, SizeOf( Double));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_SMALLINT,
-      DT_UNSSMALLINT      : PSmallint(sqldata)^ := Trunc( Value);
-      DT_INT,
-      DT_UNSINT           : PInteger(sqldata)^ := Trunc( Value);
-      DT_FLOAT            : PSingle(sqldata)^ := Value;
-      DT_DOUBLE           : PDouble(sqldata)^ := Value;
-      DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length :=
-                                Length( FloatToStr( Value));
-                              StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                FloatToStr( Value), sqllen-3);
-                            end;
-      DT_TINYINT,
-      DT_BIT              : PByte(sqldata)^ := Trunc( Value);
-      DT_BIGINT,
-      DT_UNSBIGINT        : PInt64(sqldata)^ := Trunc( Value);
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
-    if (sqlind <> nil) then
-       sqlind^ := 0; // not null
-  end;
-end;
-
-{**
-   Set up parameter PAnsiChar value
-   @param Index the target parameter index
-   @param Value the source value
-}
-procedure TZASASQLDA.UpdatePChar(const Index: Integer; Value: PChar);
-var
-  BlobSize: Integer;
-  AnsiTmp: AnsiString;
-begin
-  CheckIndex( Index);
-  AnsiTmp := ZPlainString(Value);
-  BlobSize := StrLen( Value);
-  if BlobSize < MinBLOBSize then
-    SetFieldType( Index, DT_VARCHAR or 1, MinBLOBSize - 1)
-  else
-    SetFieldType( Index, DT_LONGVARCHAR or 1, BlobSize);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    case sqlType and $FFFE of
-         DT_VARCHAR:
-                            begin
-                              PZASASQLSTRING( sqlData).length := BlobSize;
-                              StrLCopy( @PZASASQLSTRING( sqlData).data[0],
-                                Value, BlobSize);
-                            end;
-         DT_LONGVARCHAR:
-                            begin
-                              StrLCopy( @PZASABlobStruct( sqlData).arr[0], Value,
-                                BlobSize);
-                              PZASABlobStruct( sqlData).stored_len := BlobSize;
-                              PZASABlobStruct( sqlData).untrunc_len := BlobSize;
-                            end;
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    PDouble(sqldata)^ := Value;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
@@ -912,34 +795,24 @@ end;
    @param Index the target parameter index
    @param Value the source value
 }
-procedure TZASASQLDA.UpdateString(const Index: Integer; Value: Ansistring);
-var
-  BlobSize: Integer;
+procedure TZASASQLDA.UpdatePRaw(const Index: Integer; Value: PAnsiChar; Len: NativeUInt);
 begin
-  CheckIndex( Index);
-  BlobSize := Length( Value);
-  if BlobSize < MinBLOBSize then
-    SetFieldType( Index, DT_VARCHAR or 1, MinBLOBSize - 1)
-  else
-    SetFieldType( Index, DT_LONGVARCHAR or 1, BlobSize);
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-      DT_VARCHAR:
-        begin
-          PZASASQLSTRING( sqlData).length := BlobSize;
-          StrPLCopy( @PZASASQLSTRING( sqlData).data[0],
-            Value, BlobSize);
-        end;
-      DT_LONGVARCHAR:
-        begin
-          StrPLCopy( @PZASABlobStruct( sqlData).arr[0], Value,
-            BlobSize);
-          PZASABlobStruct( sqlData).stored_len := BlobSize;
-          PZASABlobStruct( sqlData).untrunc_len := BlobSize;
-        end;
-      else
-        CreateException( SUnsupportedParameterType);
+    if Len < MinBLOBSize then
+    begin
+      SetFieldType( Index, DT_VARCHAR or 1, MinBLOBSize - 1);
+      PZASASQLSTRING( sqlData).length := Min(Len, sqllen-3);
+      System.Move(Value^, PZASASQLSTRING( sqlData).data[0], PZASASQLSTRING( sqlData).length);
+      (PAnsiChar(@PZASASQLSTRING( sqlData).data[0])+PZASASQLSTRING( sqlData).length)^ := #0;
+    end
+    else
+    begin
+      SetFieldType( Index, DT_LONGVARCHAR or 1, Len);
+      PZASABlobStruct( sqlData).array_len := Len;
+      System.Move(Value^, PZASABlobStruct( sqlData).arr[0], Len);
+      PZASABlobStruct( sqlData).stored_len := Len;
+      PZASABlobStruct( sqlData).untrunc_len := Len;
     end;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
@@ -951,35 +824,28 @@ end;
    @param Index the target parameter index
    @param Value the source value
 }
-procedure TZASASQLDA.UpdateBytes(const Index: Integer; Value: TByteDynArray);
+procedure TZASASQLDA.UpdateBytes(const Index: Integer; Value: TBytes);
 var
   BlobSize: Integer;
 begin
-  CheckIndex( Index);
   BlobSize := Length( Value);
-  if BlobSize < MinBLOBSize then
-    SetFieldType( Index, DT_BINARY or 1, MinBLOBSize - 1)
-  else
-    SetFieldType( Index, DT_LONGBINARY or 1, BlobSize);
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-         DT_BINARY:
-                            begin
-                              PZASASQLSTRING( sqlData).length := BlobSize;
-                              Move( Value[0], PZASASQLSTRING( sqlData).data[0], BlobSize);
-                            end;
-         DT_LONGBINARY:
-                            begin
-                              Move( Value[0], PZASABlobStruct( sqlData).arr[0], BlobSize);
-                              PZASABlobStruct( sqlData).stored_len := BlobSize;
-                              PZASABlobStruct( sqlData).untrunc_len := BlobSize;
-                            end;
+    if BlobSize < MinBLOBSize then
+    begin
+      SetFieldType( Index, DT_BINARY or 1, MinBLOBSize - 1);
+      PZASASQLSTRING( sqlData).length := BlobSize;
+      Move( Value[0], PZASASQLSTRING( sqlData).data[0], BlobSize);
+    end
     else
-      CreateException( SUnsupportedParameterType);
+    begin
+      SetFieldType( Index, DT_LONGBINARY or 1, BlobSize);
+      Move( Value[0], PZASABlobStruct( sqlData).arr[0], BlobSize);
+      PZASABlobStruct( sqlData).stored_len := BlobSize;
+      PZASABlobStruct( sqlData).untrunc_len := BlobSize;
     end;
     if (sqlind <> nil) then
-       sqlind^ := 0; // not null
+      sqlind^ := 0; // not null
   end;
 end;
 
@@ -1016,33 +882,24 @@ var
   y, m, d: word;
   hr, min, sec, msec: word;
 begin
-  CheckIndex( Index);
   SetFieldType( Index, DT_TIMESTAMP_STRUCT or 1, SizeOf( TZASASQLDateTime));
   with FSQLDA.sqlvar[Index] do
   begin
-    case sqlType and $FFFE of
-         DT_TIMESTAMP_STRUCT:
-                            begin
-                              DecodeDate( Value, y, m, d);
-                              DecodeTime( Value, hr, min, sec, msec);
-                              PZASASQLDateTime( sqlData).Year := y;
-                              PZASASQLDateTime( sqlData).Month := m - 1;
-                              PZASASQLDateTime( sqlData).Day := d;
-                              PZASASQLDateTime( sqlData).Hour := hr;
-                              PZASASQLDateTime( sqlData).Minute := min;
-                              PZASASQLDateTime( sqlData).Second := sec;
-                              PZASASQLDateTime( sqlData).MicroSecond :=
-                                msec * 1000;
-                              PZASASQLDateTime( sqlData).Day_of_Week := 0;
-                              PZASASQLDateTime( sqlData).Day_of_Year := 0;
-                            end;
-    else
-      CreateException( SUnsupportedParameterType);
-    end;
+    DecodeDate( Value, y, m, d);
+    DecodeTime( Value, hr, min, sec, msec);
+    PZASASQLDateTime( sqlData).Year := y;
+    PZASASQLDateTime( sqlData).Month := m - 1;
+    PZASASQLDateTime( sqlData).Day := d;
+    PZASASQLDateTime( sqlData).Hour := hr;
+    PZASASQLDateTime( sqlData).Minute := min;
+    PZASASQLDateTime( sqlData).Second := sec;
+    PZASASQLDateTime( sqlData).MicroSecond :=
+      msec * 1000;
+    PZASASQLDateTime( sqlData).Day_of_Week := 0;
+    PZASASQLDateTime( sqlData).Day_of_Year := 0;
     if (sqlind <> nil) then
        sqlind^ := 0; // not null
   end;
-  FDeclType[Index].sqlType := DT_TIMESTAMP;
 end;
 
 {**
@@ -1053,44 +910,7 @@ end;
 procedure TZASASQLDA.UpdateTimestamp(const Index: Integer; Value: TDateTime);
 begin
   UpdateDateTime(Index, Value);
-end;
-
-{**
-   Set up parameter Type value
-   @param Index the target parameter index
-   @param Value the source value
-}
-procedure TZASASQLDA.UpdateValue(const Index: Word; Value: Variant);
-begin
-  case VarType(Value) of
-    varEmpty,
-    varNull       : UpdateNull( Index, True);
-    varSmallint   : UpdateShort( Index, Value);
-    varInteger    : UpdateInt( Index, Value);
-    varSingle     : UpdateFloat( Index, Value);
-    varDouble     : UpdateDouble( Index, Value);
-    varCurrency   : UpdateBigDecimal( Index, Value);
-    varDate       : UpdateDateTime( Index, Value);
-    varStrArg,
-    varString,
-    varOleStr     : UpdateString( Index, Value);
-    varBoolean    : UpdateBoolean( Index, Value);
-    varByte       : UpdateByte( Index, Value);
-{$IFDEF COMPILER6_UP}
-    varInt64      : UpdateLong( Index, Value);
-    varShortInt   : UpdateByte( Index, Value);
-    varLongWord   : UpdateInt( Index, Value);
-    varWord       : UpdateShort( Index, Value);
-{$ENDIF}
-  else
-    if VarArrayDimCount( Value) = 1 then
-    begin
-      UpdateBytes( Index, VarArrayLock( Value));
-      VarArrayUnlock( Value);
-    end
-    else
-      CreateException( SUnsupportedParameterType);
-  end;
+  FDeclType[Index].sqlType := DT_TIMESTAMP;
 end;
 
 {**
@@ -1098,25 +918,31 @@ end;
    @param Index an index field number
    @param Stream the souse data stream
 }
-procedure TZASASQLDA.WriteBlob(const Index: Integer; Stream: TStream);
+procedure TZASASQLDA.WriteBlob(const Index: Integer; Stream: TStream;
+  const BlobType: TZSQLType);
 var
   BlobSize: Integer;
 begin
-  CheckIndex( Index);
-  Stream.Position := 0;
-  BlobSize := Stream.Size;
-  SetFieldType( Index, DT_LONGBINARY or 1, BlobSize);
+  stream.Position := 0;
+  BlobSize := stream.Size;
+  case BlobType of
+    stAsciiStream:   SetFieldType( Index, DT_LONGVARCHAR or 1, BlobSize);
+    stUnicodeStream: SetFieldType( Index, DT_LONGNVARCHAR or 1, BlobSize);
+    stBinaryStream:  SetFieldType( Index, DT_LONGBINARY or 1, BlobSize);
+    else
+      CreateException( SUnsupportedParameterType);
+  end;
   with FSQLDA.sqlvar[Index] do
   begin
     case sqlType and $FFFE of
-      DT_LONGVARCHAR,
+      DT_LONGVARCHAR, DT_LONGNVARCHAR,
       DT_LONGBINARY:
-                      begin
-                        Stream.ReadBuffer( PZASABlobStruct( sqlData).arr[0], BlobSize);
-                        Stream.Position := 0;
-                        PZASABlobStruct( sqlData).stored_len := BlobSize;
-                        PZASABlobStruct( sqlData).untrunc_len := BlobSize;
-                      end;
+        begin
+          stream.ReadBuffer( PZASABlobStruct( sqlData).arr[0], BlobSize);
+          stream.Position := 0;
+          PZASABlobStruct( sqlData).stored_len := BlobSize;
+          PZASABlobStruct( sqlData).untrunc_len := BlobSize;
+        end;
     else
       CreateException( SUnsupportedParameterType);
     end;
@@ -1140,7 +966,7 @@ end;
 {**
    Indicate sqldata assigned
    @param Index the field index
-   @return true if assigned field data 
+   @return true if assigned field data
 }
 function TZASASQLDA.IsAssigned(const Index: Integer): Boolean;
 begin
@@ -1155,8 +981,6 @@ end;
    @return the field BigDecimal value
 }
 function TZASASQLDA.GetBigDecimal(const Index: Integer): Extended;
-var
-  s: String;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1172,11 +996,7 @@ begin
       DT_UNSINT      : Result := PLongWord(sqldata)^;
       DT_FLOAT       : Result := PSingle(sqldata)^;
       DT_DOUBLE      : Result := PDouble(sqldata)^;
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToFloat( s);
-                       end;
+      DT_VARCHAR     : Result := SQLStrToFloatDef(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), 0, PZASASQLSTRING( sqlData).length);
       DT_TINYINT,
       DT_BIT         : Result := PByte(sqldata)^;
       DT_BIGINT,
@@ -1195,7 +1015,7 @@ end;
 }
 function TZASASQLDA.GetBoolean(const Index: Integer): Boolean;
 var
-  s: String;
+  s: RawByteString;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1205,21 +1025,26 @@ begin
        Exit;
 
     case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^ <> 0;
+      DT_BIT         : Result := PByte(sqldata)^ <> 0;
       DT_SMALLINT    : Result := PSmallint(sqldata)^ <> 0;
       DT_UNSSMALLINT : Result := PWord(sqldata)^ <> 0;
       DT_INT         : Result := PInteger(sqldata)^ <> 0;
       DT_UNSINT      : Result := PLongWord(sqldata)^ <> 0;
+      DT_BIGINT      : Result := PInt64(sqldata)^ <> 0;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^ <> 0;
       DT_FLOAT       : Result := PSingle(sqldata)^ <> 0;
       DT_DOUBLE      : Result := PDouble(sqldata)^ <> 0;
       DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToInt( s) = 1;
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^ <> 0;
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^ <> 0;
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := StrToBoolEx(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := StrToBoolEx(s);
+        end;
     else
       CreateException( Format( SErrorConvertionField,
         [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
@@ -1232,9 +1057,9 @@ end;
    @param Index the field index
    @return the field Byte value
 }
-function TZASASQLDA.GetByte(const Index: Integer): ShortInt;
+function TZASASQLDA.GetByte(const Index: Integer): Byte;
 var
-  s: String;
+  s: RawByteString;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1244,21 +1069,334 @@ begin
        Exit;
 
     case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
       DT_SMALLINT    : Result := PSmallint(sqldata)^;
       DT_UNSSMALLINT : Result := PWord(sqldata)^;
       DT_INT         : Result := PInteger(sqldata)^;
       DT_UNSINT      : Result := PLongWord(sqldata)^;
-      DT_FLOAT       : Result := Trunc( PSingle(sqldata)^);
-      DT_DOUBLE      : Result := Trunc( PDouble(sqldata)^);
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToInt( s);
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^;
-      DT_BIGINT,
+      DT_BIGINT      : Result := PUInt64(sqldata)^;
       DT_UNSBIGINT   : Result := PInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := RawToInt(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToInt(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Byte field value
+   @param Index the field index
+   @return the field Byte value
+}
+function TZASASQLDA.GetShort(const Index: Integer): ShortInt;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PUInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := RawToInt(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToInt(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Word field value
+   @param Index the field index
+   @return the field Short value
+}
+function TZASASQLDA.GetWord(const Index: Integer): Word;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := RawToInt(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToInt(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Short field value
+   @param Index the field index
+   @return the field Short value
+}
+function TZASASQLDA.GetSmall(const Index: Integer): SmallInt;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := RawToInt(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToInt(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Integer field value
+   @param Index the field index
+   @return the field Integer value
+}
+function TZASASQLDA.GetInt(const Index: Integer): Integer;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := RawToInt(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToInt(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Long field value
+   @param Index the field index
+   @return the field Long value
+}
+function TZASASQLDA.GetUInt(const Index: Integer): LongWord;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := ZFastCode.RawToUInt64(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToUInt64(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Integer field value
+   @param Index the field index
+   @return the field Integer value
+}
+function TZASASQLDA.GetLong(const Index: Integer): Int64;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := RawToInt64(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToInt64(s);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
+end;
+
+{**
+   Return Long field value
+   @param Index the field index
+   @return the field Long value
+}
+function TZASASQLDA.GetULong(const Index: Integer): UInt64;
+var
+  s: RawByteString;
+begin
+  CheckRange(Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
+      DT_SMALLINT    : Result := PSmallint(sqldata)^;
+      DT_UNSSMALLINT : Result := PWord(sqldata)^;
+      DT_INT         : Result := PInteger(sqldata)^;
+      DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
+      DT_FLOAT       : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PSingle(sqldata)^);
+      DT_DOUBLE      : Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( PDouble(sqldata)^);
+      DT_VARCHAR:
+         begin
+           ZSetString(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length, s{%H-});
+           Result := ZFastCode.RawToUInt64(s);
+         end;
+      DT_LONGVARCHAR :
+        begin
+          ReadBlobToString( Index, FRawTemp);
+          Result := ZFastCode.RawToUInt64(s);
+        end;
     else
       CreateException( Format( SErrorConvertionField,
         [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
@@ -1271,7 +1409,7 @@ end;
    @param Index the field index
    @return the field Bytes value
 }
-function TZASASQLDA.GetBytes(const Index: Integer): TByteDynArray;
+function TZASASQLDA.GetBytes(const Index: Integer): TBytes;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1300,7 +1438,7 @@ end;
 }
 function TZASASQLDA.GetDate(const Index: Integer): TDateTime;
 begin
-  Result := Trunc( GetTimestamp( Index));
+  Result := {$IFDEF USE_FAST_TRUNC}ZFastCode.{$ENDIF}Trunc( GetTimestamp( Index));
 end;
 
 {**
@@ -1309,8 +1447,6 @@ end;
    @return the field Double value
 }
 function TZASASQLDA.GetDouble(const Index: Integer): Double;
-var
-  s: String;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1320,21 +1456,17 @@ begin
        Exit;
 
     case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
       DT_SMALLINT    : Result := PSmallint(sqldata)^;
       DT_UNSSMALLINT : Result := PWord(sqldata)^;
       DT_INT         : Result := PInteger(sqldata)^;
       DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
       DT_FLOAT       : Result := PSingle(sqldata)^;
       DT_DOUBLE      : Result := PDouble(sqldata)^;
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToFloat( s);
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^;
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
+      DT_VARCHAR     : Result := SQLStrToFloatDef(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), 0, PZASASQLSTRING( sqlData).length);
     else
       CreateException( Format( SErrorConvertionField,
         [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
@@ -1348,8 +1480,6 @@ end;
    @return the field Float value
 }
 function TZASASQLDA.GetFloat(const Index: Integer): Single;
-var
-  s: String;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1359,128 +1489,20 @@ begin
        Exit;
 
     case sqlType and $FFFE of
+      DT_TINYINT     : Result := PShortInt(sqldata)^;
+      DT_BIT         : Result := PByte(sqldata)^;
       DT_SMALLINT    : Result := PSmallint(sqldata)^;
       DT_UNSSMALLINT : Result := PWord(sqldata)^;
       DT_INT         : Result := PInteger(sqldata)^;
       DT_UNSINT      : Result := PLongWord(sqldata)^;
+      DT_BIGINT      : Result := PInt64(sqldata)^;
+      DT_UNSBIGINT   : Result := PUInt64(sqldata)^;
       DT_FLOAT       : Result := PSingle(sqldata)^;
       DT_DOUBLE      : Result := PDouble(sqldata)^;
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToFloat( s);
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^;
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
+      DT_VARCHAR     : Result := SQLStrToFloatDef(PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), 0, PZASASQLSTRING( sqlData).length);
     else
       CreateException( Format( SErrorConvertionField,
         [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-    end;
-  end;
-end;
-
-{**
-   Return Integer field value
-   @param Index the field index
-   @return the field Integer value
-}
-function TZASASQLDA.GetInt(const Index: Integer): Integer;
-var
-  s: String;
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    Result := 0;
-    if (sqlind^ < 0) then
-       Exit;
-
-    case sqlType and $FFFE of
-      DT_SMALLINT    : Result := PSmallint(sqldata)^;
-      DT_UNSSMALLINT : Result := PWord(sqldata)^;
-      DT_INT         : Result := PInteger(sqldata)^;
-      DT_UNSINT      : Result := PLongWord(sqldata)^;
-      DT_FLOAT       : Result := Trunc( PSingle(sqldata)^);
-      DT_DOUBLE      : Result := Trunc( PDouble(sqldata)^);
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToInt( s);
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^;
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
-    else
-      CreateException( Format( SErrorConvertionField,
-        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-    end;
-  end;
-end;
-
-{**
-   Return Long field value
-   @param Index the field index
-   @return the field Long value
-}
-function TZASASQLDA.GetLong(const Index: Integer): Int64;
-var
-  s: String;
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    Result := 0;
-    if (sqlind^ < 0) then
-       Exit;
-
-    case sqlType and $FFFE of
-      DT_SMALLINT    : Result := PSmallint(sqldata)^;
-      DT_UNSSMALLINT : Result := PWord(sqldata)^;
-      DT_INT         : Result := PInteger(sqldata)^;
-      DT_UNSINT      : Result := PLongWord(sqldata)^;
-      DT_FLOAT       : Result := Trunc( PSingle(sqldata)^);
-      DT_DOUBLE      : Result := Trunc( PDouble(sqldata)^);
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToInt64( s);
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^;
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
-    else
-      CreateException( Format( SErrorConvertionField,
-        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-    end;
-  end;
-end;
-
-{**
-   Return PAnsiChar field value
-   @param Index the field index
-   @return the field PAnsiChar value
-}
-function TZASASQLDA.GetPChar(const Index: Integer): PAnsiChar;
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    Result := nil;
-    if (sqlind^ < 0) then
-       Exit;
-
-    case sqlType and $FFFE of
-         DT_VARCHAR:
-            begin
-              GetMem( Result, PZASASQLSTRING( sqlData).length + 1);
-              StrLCopy( Result, @PZASASQLSTRING( sqlData).data[0], PZASASQLSTRING( sqlData).length);
-            end;
-    else
-      Result := PAnsiChar(GetString(Index));
     end;
   end;
 end;
@@ -1490,74 +1512,45 @@ end;
    @param Index the field index
    @return the field String value
 }
-function TZASASQLDA.GetString(const Index: Integer): string;
+function TZASASQLDA.GetPRaw(const Index: Integer; out Len: NativeUInt): PAnsiChar;
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
   begin
-    Result := '';
+    Result := nil;
+    Len := 0;
     if (sqlind^ < 0) then
        Exit;
 
     case sqlType and $FFFE of
-      DT_SMALLINT    : Result := IntToStr( PSmallint(sqldata)^);
-      DT_UNSSMALLINT : Result := IntToStr( PWord(sqldata)^);
-      DT_INT         : Result := IntToStr( PInteger(sqldata)^);
-      DT_UNSINT      : Result := IntToStr( PLongWord(sqldata)^);
-      DT_FLOAT       : Result := FloatToStr( PSingle(sqldata)^);
-      DT_DOUBLE      : Result := FloatToStr( PDouble(sqldata)^);
-      DT_VARCHAR     : SetString(Result, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]),
-                         PZASASQLSTRING( sqlData).length);
-      DT_LONGVARCHAR : ReadBlobToString( Index, Result);
-      DT_TIMESTAMP_STRUCT : Result := DateToStr( GetTimestamp( Index));
-      DT_TINYINT     : Result := IntToStr( PByte(sqldata)^);
-      DT_BIT         : Result := BoolToStr( ( PByte(sqldata)^ = 1), True);
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := IntToStr( PInt64(sqldata)^);
+      DT_TINYINT     : FRawTemp := IntToRaw( PShortInt(sqldata)^);
+      DT_BIT         : FRawTemp := BoolToRawEx( PByte(sqldata)^ = 1);
+      DT_SMALLINT    : FRawTemp := IntToRaw( PSmallint(sqldata)^);
+      DT_UNSSMALLINT : FRawTemp := IntToRaw( PWord(sqldata)^);
+      DT_INT         : FRawTemp := IntToRaw( PInteger(sqldata)^);
+      DT_UNSINT      : FRawTemp := IntToRaw( PLongWord(sqldata)^);
+      DT_BIGINT      : FRawTemp := IntToRaw( PInt64(sqldata)^);
+      DT_UNSBIGINT   : FRawTemp := IntToRaw( PUInt64(sqldata)^);
+      DT_FLOAT       : FRawTemp := FloatToRaw( PSingle(sqldata)^);
+      DT_DOUBLE      : FRawTemp := FloatToRaw( PDouble(sqldata)^);
+      DT_VARCHAR     :
+        begin
+          Result := @PZASASQLSTRING(sqlData).data[0];
+          Len := PZASASQLSTRING( sqlData).length;
+          Exit;
+        end;
+      DT_LONGVARCHAR : ReadBlobToString( Index, FRawTemp);
+      DT_TIMESTAMP_STRUCT : FRawTemp := DateTimeToRawSQLTimeStamp(GetTimestamp(Index), FConSettings^.ReadFormatSettings, False);
     else
       CreateException( Format( SErrorConvertionField,
         [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
     end;
   end;
-end;
-
-{**
-   Return Short field value
-   @param Index the field index
-   @return the field Short value
-}
-function TZASASQLDA.GetShort(const Index: Integer): SmallInt;
-var
-  s: String;
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    Result := 0;
-    if (sqlind^ < 0) then
-       Exit;
-
-    case sqlType and $FFFE of
-      DT_SMALLINT    : Result := PSmallint(sqldata)^;
-      DT_UNSSMALLINT : Result := PWord(sqldata)^;
-      DT_INT         : Result := PInteger(sqldata)^;
-//      DT_UNSINT      : Result := PLongWord(sqldata)^;
-      DT_FLOAT       : Result := Trunc( PSingle(sqldata)^);
-      DT_DOUBLE      : Result := Trunc( PDouble(sqldata)^);
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := StrToInt( s);
-                       end;
-      DT_TINYINT,
-      DT_BIT         : Result := PByte(sqldata)^;
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
-    else
-      CreateException( Format( SErrorConvertionField,
-        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-    end;
-  end;
+  Len := Length(FRawTemp);
+  if Len = 0 then
+    Result := PEmptyAnsiString
+  else
+    Result := Pointer(FRawTemp);
 end;
 
 {**
@@ -1567,7 +1560,26 @@ end;
 }
 function TZASASQLDA.GetTime(const Index: Integer): TDateTime;
 begin
-  Result := Frac( GetTimestamp( Index));
+  CheckRange( Index);
+  with FSQLDA.sqlvar[Index] do
+  begin
+    Result := 0;
+    if (sqlind^ < 0) then
+       Exit;
+
+    case sqlType and $FFFE of
+      DT_TIMESTAMP_STRUCT:
+        begin
+          Result :=  EncodeTime( PZASASQLDateTime( sqlData).Hour,
+                                PZASASQLDateTime( sqlData).Minute,
+                                PZASASQLDateTime( sqlData).Second,
+                                PZASASQLDateTime( sqlData).MicroSecond div 1000);
+        end;
+    else
+      CreateException( Format( SErrorConvertionField,
+        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
+    end;
+  end;
 end;
 
 {**
@@ -1602,53 +1614,6 @@ begin
   end;
 end;
 
-{**
-   Return Variant field value
-   @param Index the field index
-   @return the field Variant value
-}
-function TZASASQLDA.GetValue(const Index: Word): Variant;
-var
-  s: String;
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    VarClear(Result);
-    if (sqlind^ < 0) then
-       Exit;
-
-    case sqlType and $FFFE of
-      DT_SMALLINT    : Result := PSmallint(sqldata)^;
-      DT_UNSSMALLINT : Result := PWord(sqldata)^;
-      DT_INT         : Result := PInteger(sqldata)^;
-//      DT_UNSINT      : Result := PLongWord(sqldata)^;
-      DT_FLOAT       : Result := PSingle(sqldata)^;
-      DT_DOUBLE      : Result := PDouble(sqldata)^;
-      DT_VARCHAR:
-                       begin
-                         SetString(s, PAnsiChar(@PZASASQLSTRING(sqlData).data[0]), PZASASQLSTRING( sqlData).length);
-                         Result := s;
-                       end;
-      DT_LONGVARCHAR,
-      DT_LONGBINARY  : ReadBlobToVariant(Index, Result);
-      DT_TIMESTAMP_STRUCT : Result := GetTimeStamp( Index);
-      DT_TINYINT     : Result := PByte(sqldata)^;
-      DT_BIT         : Result := Boolean( PByte(sqldata)^);
-  {$IFDEF COMPILER6_UP}
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := PInt64(sqldata)^;
-  {$ELSE}
-      DT_BIGINT,
-      DT_UNSBIGINT   : Result := Integer( PInt64(sqldata)^);
-  {$ENDIF}
-    else
-      CreateException( Format( SErrorConvertionField,
-        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-    end;
-  end;
-end;
-
 procedure TZASASQLDA.ReadBlob(const Index: Word; Buffer: Pointer;
   Length: LongWord);
 var
@@ -1660,6 +1625,7 @@ begin
   with FSQLDA.sqlvar[Index] do
   begin
     if ( ( sqlType and $FFFE = DT_LONGVARCHAR) or
+         ( sqlType and $FFFE = DT_LONGNVARCHAR) or
          ( sqlType and $FFFE = DT_LONGBINARY)) and
        ( PZASABlobStruct( sqlData).array_len > 0) then
     begin
@@ -1667,7 +1633,7 @@ begin
         'Blob Record is not correctly initialized');
       if PZASABlobStruct( sqlData).array_len <> Length then
         CreateException( 'Could''nt complete BLOB-Read');
-      move( PZASABlobStruct( sqlData).arr[0], PChar( Buffer)[0], PZASABlobStruct( sqlData).array_len);
+      move( PZASABlobStruct( sqlData).arr[0], PAnsiChar( Buffer)[0], PZASABlobStruct( sqlData).array_len);
     end
     else
     begin
@@ -1677,35 +1643,43 @@ begin
       try
         with TempSQLDA.sqlvar[ 0] do
         begin
-          sqlType := DT_FIXCHAR;
+          case Self.GetFieldSqlType(Index) of
+            stAsciiStream:
+              SetFieldType(TempSQLDA, 0, DT_LONGVARCHAR, Min( BlockSize, Length));
+            stUnicodeStream:
+              SetFieldType(TempSQLDA, 0, DT_LONGNVARCHAR, Min( BlockSize, Length));
+            stBinaryStream:
+              SetFieldType(TempSQLDA, 0, DT_LONGBINARY, Min( BlockSize, Length));
+            else
+              sqlType := DT_FIXCHAR;
+          end;
           sqlname.length := 0;
           sqlname.data[0] := #0;
           TempSQLDA.sqld := TempSQLDA.sqln;
 
-          sqlData := Buffer;
           Offs := 0;
-          sqllen := Min( BlockSize, Length);
           Rd := 0;
 
           while True do
           begin
-            FPlainDriver.db_get_data(FHandle, PAnsiChar(FCursorName), Index + 1, Offs, TempSQLDA);
-            CheckASAError( FPlainDriver, FHandle, lcOther);
-            if sqlind^ < 0 then
+            FPlainDriver.db_get_data(FHandle, FCursorName, Index + 1, Offs, TempSQLDA);
+            CheckASAError( FPlainDriver, FHandle, lcOther, FConSettings);
+            if ( sqlind^ < 0 ) then
               break;
-            Inc( Rd, sqllen);
-            if sqlind^ = 0 then
+            Inc( Rd, PZASABlobStruct( sqlData)^.stored_len);
+            if Offs = 0 then ReallocMem(Buffer, PZASABlobStruct( sqlData)^.untrunc_len);
+            Move((PZASABlobStruct( sqlData)^.arr[0]), (PAnsiChar(Buffer)+Offs)^, PZASABlobStruct( sqlData)^.stored_len);
+            if ( sqlind^ = 0 ) or ( RD = Length) then
               break;
-            Inc( Offs, sqllen);
-            Inc(PAnsiChar(sqlData), sqllen);
+            Inc( Offs, PZASABlobStruct( sqlData)^.stored_len);
             sqllen := Min( BlockSize, Length-Rd);
           end;
           if Rd <> Length then
             CreateException( 'Could''nt complete BLOB-Read');
 
-          DriverManager.LogMessage( lcExecute, FPlainDriver.GetProtocol,
-            Format( 'GET DATA for Column: %s', [ GetFieldName(Index)]));
-
+          DriverManager.LogMessage( lcExecute, FConSettings^.Protocol,
+            'GET DATA for Column: '+ GetFieldName(Index));
+          FreeMem(sqlData, SizeOf(TZASABlobStruct)+Min( BlockSize, Length));
           FPlainDriver.db_free_sqlda( TempSQLDA);
           TempSQLDA := nil;
         end;
@@ -1724,7 +1698,7 @@ end;
    @param Str destination string
 }
 procedure TZASASQLDA.ReadBlobToMem(const Index: Word; var Buffer: Pointer;
-  var Length: LongWord);
+  var Length: NativeUInt; const Binary: Boolean = True);
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1735,10 +1709,16 @@ begin
        Exit;
 
     if ( ( sqlType and $FFFE = DT_LONGVARCHAR) or
+         ( sqlType and $FFFE = DT_LONGNVARCHAR) or
          ( sqlType and $FFFE = DT_LONGBINARY)) then
     begin
       Length := PZASABlobStruct( sqlData).untrunc_len;
-      GetMem( Buffer, Length);
+      if Binary then
+        GetMem( Buffer, Length)
+      else
+        GetMem( Buffer, Length +1);
+      if Length = 0 then
+        Exit;
       ReadBlob( Index, Buffer, Length);
     end
     else
@@ -1752,7 +1732,7 @@ end;
    @param Index an filed index
    @param Str destination string
 }
-procedure TZASASQLDA.ReadBlobToString(const Index: Word; var Str: string);
+procedure TZASASQLDA.ReadBlobToString(const Index: Word; var Str: RawByteString);
 begin
   CheckRange(Index);
   with FSQLDA.sqlvar[Index] do
@@ -1764,68 +1744,7 @@ begin
     if sqlType and $FFFE = DT_LONGVARCHAR then
     begin
       SetLength( Str, PZASABlobStruct( sqlData).untrunc_len);
-      ReadBlob(Index, PAnsiChar(AnsiString(Str)), Length(Str));
-    end
-    else
-      CreateException( Format( SErrorConvertionField,
-        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-  end;
-end;
-
-{**
-   Read blob data to stream
-   @param Index an filed index
-   @param Stream destination stream object
-}
-procedure TZASASQLDA.ReadBlobToStream(const Index: Word; Stream: TStream);
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    Stream.Size := 0;
-    if (sqlind^ < 0) then
-       Exit;
-
-    if ( ( sqlType and $FFFE = DT_LONGVARCHAR) or
-         ( sqlType and $FFFE = DT_LONGBINARY)) and
-      ( Stream is TMemoryStream) then
-    begin
-      Stream.Size := PZASABlobStruct( sqlData).untrunc_len;
-      ReadBlob( Index, TMemoryStream( Stream).Memory, Stream.Size);
-    end
-    else
-      CreateException( Format( SErrorConvertionField,
-        [ GetFieldName(Index), ConvertASATypeToString( sqlType)]));
-  end;
-end;
-
-{**
-   Read blob data to variant value
-   @param Index an filed index
-   @param Value destination variant value
-}
-procedure TZASASQLDA.ReadBlobToVariant(const Index: Word;
-  var Value: Variant);
-var
-  PData: Pointer;
-begin
-  CheckRange(Index);
-  with FSQLDA.sqlvar[Index] do
-  begin
-    Value := Null;
-    if (sqlind^ < 0) then
-       Exit;
-
-    if ( ( sqlType and $FFFE = DT_LONGVARCHAR) or
-         ( sqlType and $FFFE = DT_LONGBINARY)) then
-    begin
-      Value := VarArrayCreate( [ 0, PZASABlobStruct( sqlData).untrunc_len-1], varByte);
-      PData := VarArrayLock( Value);
-      try
-        ReadBlob( Index, PData, PZASABlobStruct( sqlData).untrunc_len);
-      finally
-        VarArrayUnlock( Value);
-      end;
+      ReadBlob(Index, Pointer(Str), Length(Str));
     end
     else
       CreateException( Format( SErrorConvertionField,
@@ -1838,13 +1757,14 @@ end;
   @param SQLType Field of TASASQLVar structure.
   @return a SQL undepended type.
 }
-function ConvertASATypeToSQLType( SQLType: SmallInt): TZSQLType;
+function ConvertASATypeToSQLType(const SQLType: SmallInt;
+  const CtrlsCPType: TZControlsCodePage): TZSQLType;
 begin
   case SQLType and $FFFE of
     DT_NOTYPE:
       Result := stUnknown;
     DT_SMALLINT:
-      Result := stShort;
+      Result := stSmall;
     DT_INT:
       Result := stInteger;
     DT_DECIMAL:
@@ -1855,10 +1775,16 @@ begin
       Result := stDouble;
     DT_DATE:
       Result := stDate;
-    DT_VARIABLE, DT_STRING, DT_FIXCHAR, DT_VARCHAR:
-      Result := stString;
-    DT_LONGVARCHAR:
-      Result := stAsciiStream;
+    DT_VARIABLE, DT_STRING, DT_FIXCHAR, DT_VARCHAR, DT_NSTRING, DT_NFIXCHAR, DT_NVARCHAR:
+      if (CtrlsCPType = cCP_UTF16) then
+        Result := stUnicodeString
+      else
+        Result := stString;
+    DT_LONGVARCHAR, DT_LONGNVARCHAR:
+      if (CtrlsCPType = cCP_UTF16) then
+        Result := stUnicodeStream
+      else
+        Result := stAsciiStream;
     DT_TIME:
       Result := stTime;
     DT_TIMESTAMP:
@@ -1876,7 +1802,7 @@ begin
     DT_UNSINT:
       Result := stInteger;
     DT_UNSSMALLINT:
-      Result := stShort;
+      Result := stSmall;
     DT_UNSBIGINT:
       Result := stLong;
     DT_BIT:
@@ -1938,6 +1864,14 @@ begin
       Result := 'DT_UNSBIGINT';
     DT_BIT:
       Result := 'DT_BIT';
+    DT_NSTRING:
+      Result := 'DT_NSTRING';
+    DT_NFIXCHAR:
+      Result := 'DT_NFIXCHAR';
+    DT_NVARCHAR:
+      Result := 'DT_NVARCHAR';
+    DT_LONGNVARCHAR:
+      Result := 'DT_LONGNVARCHAR';
   else
     Result := 'Unknown';
   end;
@@ -1948,19 +1882,28 @@ end;
   @param FieldType dblibc native field type.
   @return a SQL undepended type.
 }
-function ConvertASAJDBCToSqlType(FieldType: SmallInt): TZSQLType;
+function ConvertASAJDBCToSqlType(const FieldType: SmallInt;
+  CtrlsCPType: TZControlsCodePage): TZSQLType;
 begin
   case FieldType of
-    1, 12, -8, -9: Result := stString;
+    1, 12, -8, -9:
+      if (CtrlsCPType = cCP_UTF16) then
+        Result := stUnicodeString
+      else
+        Result := stString;
     -7: Result := stBoolean;
     -6: Result := stByte;
-    5: Result := stShort;
+    5: Result := stSmall;
     4: Result := stInteger;
     -5 : Result := stLong;
     6, 7, 8: Result := stDouble;
     2, 3: Result := stDouble;  //BCD Feld
     11, 93: Result := stTimestamp;
-    -1, -10: Result := stAsciiStream;
+    -1, -10:
+      if (CtrlsCPType = cCP_UTF16) then
+        Result := stUnicodeStream
+      else
+        Result := stAsciiStream;
     -4, -11, 1111: Result := stBinaryStream;
     -3, -2: Result := stBytes;
     92: Result := stTime;
@@ -2001,20 +1944,26 @@ end;
   @param LogCategory a logging category.
   @param LogMessage a logging message.
 }
-procedure CheckASAError( PlainDriver: IZASAPlainDriver;
-  Handle: PZASASQLCA; LogCategory: TZLoggingCategory; LogMessage: string = '');
+procedure CheckASAError(const PlainDriver: IZASAPlainDriver;
+  const Handle: PZASASQLCA; const LogCategory: TZLoggingCategory;
+  const ConSettings: PZConSettings; const LogMessage: RawByteString = '';
+  const SupressExceptionID: Integer = 0);
 var
   ErrorBuf: array[0..1024] of AnsiChar;
-  ErrorMessage: string;
+  ErrorMessage: RawByteString;
 begin
   if Handle.SqlCode < SQLE_NOERROR then
   begin
-    ErrorMessage := String(PlainDriver.sqlError_Message( Handle, ErrorBuf, SizeOf( ErrorBuf)));
+    ErrorMessage := PlainDriver.sqlError_Message( Handle, ErrorBuf, SizeOf( ErrorBuf));
     //SyntaxError Position in SQLCount
-    DriverManager.LogError( LogCategory, PlainDriver.GetProtocol, LogMessage,
-      Handle.SqlCode, ErrorMessage);
-    raise EZSQLException.CreateWithCode( Handle.SqlCode,
-      Format(SSQLError1, [ErrorMessage]));
+    if not (SupressExceptionID = Handle.SqlCode ) then
+    begin
+      DriverManager.LogError( LogCategory, ConSettings^.Protocol, LogMessage,
+        Handle.SqlCode, ErrorMessage);
+
+      raise EZSQLException.CreateWithCode( Handle.SqlCode,
+        Format(SSQLError1, [ConSettings^.ConvFuncs.ZRawToString(ErrorMessage, ConSettings^.ClientCodePage^.CP, ConSettings^.CTRL_CP)]));
+    end;
   end;
 end;
 
@@ -2034,7 +1983,7 @@ begin
     or (Statement.GetResultSetType <> rtForwardOnly) then
   begin
     CachedResultSet := TZCachedResultSet.Create( NativeResultSet, SQL, nil,
-      Statement.GetConnection.GetClientCodePageInformations);
+      Statement.GetConnection.GetConSettings);
     CachedResultSet.SetResolver( TZASACachedResolver.Create(
       Statement, NativeResultSet.GetMetadata));
     CachedResultSet.SetConcurrency( Statement.GetResultSetConcurrency);
@@ -2045,27 +1994,27 @@ begin
 end;
 
 procedure DescribeCursor( FASAConnection: IZASAConnection; FSQLData: IZASASQLDA;
-  Cursor: AnsiString; SQL: String);
+  Cursor: AnsiString; SQL: RawByteString);
 begin
   FSQLData.AllocateSQLDA( StdVars);
   with FASAConnection do
   begin
     GetPlainDriver.db_describe_cursor(GetDBHandle, PAnsiChar(Cursor), FSQLData.GetData, SQL_DESCRIBE_OUTPUT);
-    ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute, SQL);
+    ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute, FASAConnection.GetConSettings, SQL);
     if FSQLData.GetData^.sqld <= 0 then
       raise EZSQLException.Create( SCanNotRetrieveResultSetData)
     else if ( FSQLData.GetData^.sqld > FSQLData.GetData^.sqln) then
     begin
       FSQLData.AllocateSQLDA( FSQLData.GetData^.sqld);
       GetPlainDriver.db_describe_cursor(GetDBHandle, PAnsiChar(Cursor), FSQLData.GetData, SQL_DESCRIBE_OUTPUT);
-       ZDbcASAUtils.CheckASAError(GetPlainDriver, GetDBHandle, lcExecute, SQL);
+       ZDbcASAUtils.CheckASAError(GetPlainDriver, GetDBHandle, lcExecute, FASAConnection.GetConSettings, SQL);
     end;
     FSQLData.InitFields;
   end;
 end;
 
 procedure ASAPrepare( FASAConnection: IZASAConnection; FSQLData, FParamsSQLData: IZASASQLDA;
-   const SQL: String; StmtNum: PSmallInt; var FPrepared, FMoreResults: Boolean);
+   const SQL: RawByteString; StmtNum: PSmallInt; var FPrepared, FMoreResults: Boolean);
 begin
   with FASAConnection do
   begin
@@ -2080,16 +2029,10 @@ begin
       end;
     end;
     try
-      {$IFDEF DELPHI12_UP}
-      GetPlainDriver.db_prepare_describe(GetDBHandle, nil, StmtNum,
-            PAnsiChar(UTF8String(SQL)), FParamsSQLData.GetData, SQL_PREPARE_DESCRIBE_STMTNUM +
-            SQL_PREPARE_DESCRIBE_INPUT + SQL_PREPARE_DESCRIBE_VARRESULT, 0);
-      {$ELSE}
       GetPlainDriver.db_prepare_describe( GetDBHandle, nil, StmtNum,
             PAnsiChar(SQL), FParamsSQLData.GetData, SQL_PREPARE_DESCRIBE_STMTNUM +
             SQL_PREPARE_DESCRIBE_INPUT + SQL_PREPARE_DESCRIBE_VARRESULT, 0);
-      {$ENDIF} 
-      ZDbcASAUtils.CheckASAError(GetPlainDriver, GetDBHandle, lcExecute, SQL);
+      ZDbcASAUtils.CheckASAError(GetPlainDriver, GetDBHandle, lcExecute, GetConSettings, SQL);
 
       FMoreResults := GetDBHandle.sqlerrd[2] = 0;
 
@@ -2098,30 +2041,27 @@ begin
         FParamsSQLData.AllocateSQLDA( FParamsSQLData.GetData^.sqld);
         GetPlainDriver.db_describe( GetDBHandle, nil, StmtNum,
           FParamsSQLData.GetData, SQL_DESCRIBE_INPUT);
-        ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute,
-          SQL);
+        ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute, GetConSettings, SQL);
       end;
 
       if not FMoreResults then
       begin
         GetPlainDriver.db_describe( GetDBHandle, nil, StmtNum,
           FSQLData.GetData, SQL_DESCRIBE_OUTPUT);
-        ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute,
-          SQL);
+        ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute, GetConSettings, SQL);
         if FSQLData.GetData^.sqld > FSQLData.GetData^.sqln then
         begin
           FSQLData.AllocateSQLDA( FSQLData.GetData^.sqld);
           GetPlainDriver.db_describe( GetDBHandle, nil, StmtNum,
             FSQLData.GetData, SQL_DESCRIBE_OUTPUT);
-          ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute,
-            SQL);
+          ZDbcASAUtils.CheckASAError( GetPlainDriver, GetDBHandle, lcExecute, GetConSettings, SQL);
         end;
         FSQLData.InitFields;
       end;
 
       FPrepared := true;
       { Logging SQL Command }
-      DriverManager.LogMessage( lcExecute, GetPlainDriver.GetProtocol,
+      DriverManager.LogMessage( lcExecute, GetConSettings.Protocol,
         'Prepare: '+ SQL);
     except
       on E: Exception do
@@ -2134,83 +2074,87 @@ begin
   end;
 end;
 
-procedure PrepareParameters( PlainDriver: IZASAPlainDriver;
+procedure PrepareParameters( ClientVarManager: IZClientVariantManager;
   InParamValues: TZVariantDynArray; InParamTypes: TZSQLTypeArray;
-  InParamCount: Integer; ParamSqlData: IZASASQLDA);
+  InParamCount: Integer; ParamSqlData: IZASASQLDA; ConSettings: PZConSettings);
 var
   i: Integer;
   TempBlob: IZBlob;
   TempStream: TStream;
+  CharRec: TZCharRec;
 begin
   if InParamCount <> ParamSqlData.GetFieldCount then
     raise EZSQLException.Create( SInvalidInputParameterCount);
   for i := 0 to ParamSqlData.GetFieldCount-1 do
-  begin
-    if DefVarManager.IsNull( InParamValues[i])then
+    if ClientVarManager.IsNull( InParamValues[i])then
       ParamSqlData.UpdateNull( i, True)
     else
       case InParamTypes[i] of
         stBoolean:
           ParamSqlData.UpdateBoolean( i,
-            SoftVarManager.GetAsBoolean( InParamValues[i]));
+            ClientVarManager.GetAsBoolean( InParamValues[i]));
         stByte:
           ParamSqlData.UpdateByte( i,
-            SoftVarManager.GetAsInteger( InParamValues[i]));
-        stShort:
-          ParamSqlData.UpdateShort( i,
-            SoftVarManager.GetAsInteger( InParamValues[i]));
+            ClientVarManager.GetAsInteger( InParamValues[i]));
+        stShort, stSmall:
+          ParamSqlData.UpdateSmall( i,
+            ClientVarManager.GetAsInteger( InParamValues[i]));
         stInteger:
           ParamSqlData.UpdateInt( i,
-            SoftVarManager.GetAsInteger( InParamValues[i]));
+            ClientVarManager.GetAsInteger( InParamValues[i]));
         stLong:
           ParamSqlData.UpdateLong( i,
-            SoftVarManager.GetAsInteger( InParamValues[i]));
+            ClientVarManager.GetAsInteger( InParamValues[i]));
         stFloat:
           ParamSqlData.UpdateFloat( i,
-            SoftVarManager.GetAsFloat( InParamValues[i]));
+            ClientVarManager.GetAsFloat( InParamValues[i]));
         stDouble:
           ParamSqlData.UpdateDouble( i,
-            SoftVarManager.GetAsFloat( InParamValues[i]));
+            ClientVarManager.GetAsFloat( InParamValues[i]));
         stBigDecimal:
           ParamSqlData.UpdateBigDecimal( i,
-            SoftVarManager.GetAsFloat( InParamValues[i]));
-        stString:
-          ParamSqlData.UpdateString( i,
-            SoftVarManager.GetAsString( InParamValues[i]));
-        stUnicodeString:
-          ParamSqlData.UpdateString( i,
-            SoftVarManager.GetAsUnicodeString( InParamValues[i]));
+            ClientVarManager.GetAsFloat( InParamValues[i]));
+        stString, stUnicodeString:
+          begin
+            CharRec := ClientVarManager.GetAsCharRec( InParamValues[i], ConSettings^.ClientCodePage^.CP);
+            ParamSqlData.UpdatePRaw( i, CharRec.P, CharRec.Len);
+          end;
         stBytes:
-          ParamSqlData.UpdateBytes( i,
-            StrToBytes(AnsiString(SoftVarManager.GetAsString( InParamValues[i]))));
+          ParamSqlData.UpdateBytes( i, ClientVarManager.GetAsBytes( InParamValues[i]));
         stDate:
           ParamSqlData.UpdateDate( i,
-            SoftVarManager.GetAsDateTime( InParamValues[i]));
+            ClientVarManager.GetAsDateTime( InParamValues[i]));
         stTime:
           ParamSqlData.UpdateTime( i,
-            SoftVarManager.GetAsDateTime( InParamValues[i]));
+            ClientVarManager.GetAsDateTime( InParamValues[i]));
         stTimestamp:
           ParamSqlData.UpdateTimestamp( i,
-            SoftVarManager.GetAsDateTime( InParamValues[i]));
+            ClientVarManager.GetAsDateTime( InParamValues[i]));
         stAsciiStream,
         stUnicodeStream,
         stBinaryStream:
           begin
-            TempBlob := DefVarManager.GetAsInterface( InParamValues[i]) as IZBlob;
+            TempBlob := ClientVarManager.GetAsInterface(InParamValues[I]) as IZBlob;
             if not TempBlob.IsEmpty then
             begin
-              TempStream := TempBlob.GetStream;
-              try
-                ParamSqlData.WriteBlob( i, TempStream);
-              finally
+              if (InParamTypes[i] in [stUnicodeStream, stAsciiStream]) then
+                if TempBlob.IsClob then
+                  TempStream := TempBlob.GetRawByteStream
+                else
+                  TempStream := TStringStream.Create(GetValidatedAnsiStringFromBuffer(
+                    TempBlob.GetBuffer, TempBlob.Length, ConSettings))
+              else
+                TempStream := TempBlob.GetStream;
+              if Assigned(TempStream) then
+              begin
+                ParamSqlData.WriteBlob(I, TempStream, InParamTypes[i]);
                 TempStream.Free;
               end;
             end;
           end;
         else
           raise EZASAConvertError.Create( SUnsupportedParameterType);
-      end;
-  end;
+    end;
 end;
 
 {**
@@ -2222,9 +2166,10 @@ function RandomString( Len: integer): string;
 begin
   Result := '';
   while Length( Result) < Len do
-    Result := Result + IntToStr( Trunc( Random( High( Integer))));
+    Result := Result + ZFastCode.IntToStr(Random(High(Integer)));
   if Length( Result) > Len then
     Result := Copy( Result, 1, Len);
 end;
 
 end.
+
