@@ -8,11 +8,11 @@ inherited fListFrame: TfListFrame
   DesignLeft = 463
   DesignTop = 292
   object Panel1: TPanel[0]
-    Left = 0
+    Left = 464
     Height = 277
     Top = 0
     Width = 44
-    Align = alLeft
+    Align = alRight
     BevelOuter = bvNone
     ClientHeight = 277
     ClientWidth = 44

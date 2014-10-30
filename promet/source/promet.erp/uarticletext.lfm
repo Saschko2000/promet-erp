@@ -8,9 +8,9 @@ inherited fArticleTextFrame: TfArticleTextFrame
   DesignLeft = 462
   DesignTop = 228
   object cbTextTyp: TComboBox[0]
-    Left = 48
+    Left = 8
     Height = 27
-    Top = 24
+    Top = 29
     Width = 512
     Anchors = [akTop, akLeft, akRight]
     ItemHeight = 0
@@ -19,19 +19,19 @@ inherited fArticleTextFrame: TfArticleTextFrame
     Text = 'cbTextTyp'
   end
   object lTexttyp: TLabel[1]
-    Left = 48
-    Height = 13
-    Top = 3
-    Width = 39
+    Left = 8
+    Height = 15
+    Top = 8
+    Width = 41
     Caption = 'Textart'
     ParentColor = False
   end
   object pLeft: TPanel[2]
-    Left = 0
+    Left = 526
     Height = 413
     Top = 0
     Width = 44
-    Align = alLeft
+    Align = alRight
     BevelOuter = bvNone
     ClientHeight = 413
     ClientWidth = 44
@@ -96,9 +96,9 @@ inherited fArticleTextFrame: TfArticleTextFrame
     end
   end
   object mText: TMemo[3]
-    Left = 48
+    Left = 8
     Height = 336
-    Top = 64
+    Top = 69
     Width = 512
     Anchors = [akTop, akLeft, akRight, akBottom]
     OnChange = mTextChange

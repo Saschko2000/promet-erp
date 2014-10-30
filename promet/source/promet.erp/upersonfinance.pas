@@ -52,6 +52,7 @@ type
     Panel3: TPanel;
     procedure bTransfer1Click(Sender: TObject);
     procedure bTransferClick(Sender: TObject);
+    procedure Panel1Click(Sender: TObject);
   private
     { private declarations }
   public
@@ -72,6 +73,11 @@ begin
   fTransfer.eRSortCode.Text := TPerson(FDataSet).Banking.FieldByName('SORTCODE').AsString;
   fTransfer.eRAccount.Text := TPerson(FDataSet).Banking.FieldByName('ACCOUNT').AsString;
   fTransfer.Show;
+end;
+
+procedure TfPersonFinance.Panel1Click(Sender: TObject);
+begin
+
 end;
 
 procedure TfPersonFinance.bTransfer1Click(Sender: TObject);

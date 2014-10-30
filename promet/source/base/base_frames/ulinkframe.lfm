@@ -8,7 +8,7 @@ inherited fLinkFrame: TfLinkFrame
   DesignLeft = 455
   DesignTop = 237
   object pCont: TPanel[0]
-    Left = 44
+    Left = 0
     Height = 418
     Top = 0
     Width = 553
@@ -17,11 +17,11 @@ inherited fLinkFrame: TfLinkFrame
     TabOrder = 0
   end
   object Panel1: TPanel[1]
-    Left = 0
+    Left = 553
     Height = 418
     Top = 0
     Width = 44
-    Align = alLeft
+    Align = alRight
     BevelOuter = bvNone
     ClientHeight = 418
     ClientWidth = 44
@@ -57,8 +57,7 @@ inherited fLinkFrame: TfLinkFrame
         Caption = 'Eintrag'
         Font.Color = clMedGray
         Font.Height = 11
-        Font.Orientation = 900
-        Layout = tlBottom
+        Font.Orientation = -900
         ParentColor = False
         ParentFont = False
       end
@@ -453,7 +452,7 @@ inherited fLinkFrame: TfLinkFrame
       OnExecute = acAddLinksExecute
     end
   end
-  object Datasource: TDataSource[4]
+  object Datasource: TDatasource[4]
     left = 96
     top = 40
   end

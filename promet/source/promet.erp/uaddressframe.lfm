@@ -8,7 +8,7 @@ inherited fAddressFrame: TfAddressFrame
   DesignLeft = 392
   DesignTop = 284
   object pAddress: TGroupBox[0]
-    Left = 44
+    Left = 0
     Height = 260
     Top = 23
     Width = 360
@@ -368,11 +368,11 @@ inherited fAddressFrame: TfAddressFrame
     end
   end
   object Panel1: TPanel[1]
-    Left = 0
+    Left = 655
     Height = 362
     Top = 23
     Width = 44
-    Align = alLeft
+    Align = alRight
     BevelOuter = bvNone
     ClientHeight = 362
     ClientWidth = 44
@@ -561,7 +561,7 @@ inherited fAddressFrame: TfAddressFrame
     end
   end
   object gAdresses: TDBGrid[2]
-    Left = 413
+    Left = 369
     Height = 358
     Hint = 'wählen Sie hier eine Adresse'
     Top = 23
@@ -604,7 +604,7 @@ inherited fAddressFrame: TfAddressFrame
     ParentColor = False
   end
   object Splitter1: TSplitter[4]
-    Left = 404
+    Left = 360
     Height = 362
     Top = 23
     Width = 5

@@ -8,11 +8,11 @@ inherited fArticleStorageFrame: TfArticleStorageFrame
   DesignLeft = 437
   DesignTop = 275
   object Panel1: TPanel[0]
-    Left = 0
+    Left = 552
     Height = 422
     Top = 0
     Width = 44
-    Align = alLeft
+    Align = alRight
     BevelOuter = bvNone
     ClientHeight = 422
     ClientWidth = 44
