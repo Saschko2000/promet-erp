@@ -12,7 +12,7 @@ interface
 uses
   Classes, SysUtils, scrollingcontrol, ThreadedImageLoader, types,
   Graphics, fpImage, FPReadJPEGthumb, fpthumbresize,LResources,
-  FileUtil, Dialogs, GraphType, LCLIntf, Controls;
+  FileUtil, Dialogs, GraphType, LCLIntf, Controls,LMessages;
 
 
 type
@@ -938,6 +938,7 @@ begin
     y := 0;
     x := 0;
     fGridThumbsPerLine := ClientWidth div (fThumbWidth + fThumbDistance + FThumbFrameWith * 2);
+    if fGridThumbsPerLine<1 then fGridThumbsPerLine:=1;
     for i := 0 to fMngr.List.Count - 1 do
     begin
       if (i > 0) then

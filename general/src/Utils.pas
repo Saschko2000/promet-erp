@@ -1,7 +1,7 @@
 UNIT Utils;
 INTERFACE
 {$H+}
-uses Classes,SysUtils
+uses Classes,SysUtils,uminiconvencoding
      {$IFDEF LCL}
      {$IFNDEF LCLnogui}
      ,Forms,Dialogs,Clipbrd,Translations,LCLProc,Graphics,LResources
@@ -434,12 +434,8 @@ begin
     // conversion magic in LCL code
     SetCodePage(RawByteString(Result), StringCodePage(s), False);
     {$endif}
-    for i := 0 to length(s)-1 do
-      begin
-        a := ord(s[i]);
-        if a>127 then
-          Result := StringReplace(Result,s[i],' ',[rfReplaceAll]);
-      end;
+    if GuessEncoding(Result)<>EncodingUTF8 then
+      Result := ConvertEncoding(Result,GuessEncoding(Result),EncodingUTF8);
   end
   else
     Result:=s;

@@ -31,7 +31,7 @@
     <RunParams>
       <local>
         <FormatVersion Value="1"/>
-        <CommandLineParams Value="--mandant=&quot;Stora&quot; --port=1043 --smtpport=5087 --server-log"/>
+        <CommandLineParams Value="--mandant=&quot;Stora&quot; --port=1043"/>
       </local>
     </RunParams>
     <RequiredPackages Count="4">
@@ -52,7 +52,7 @@
         <DefaultFilename Value="..\base\pcmdprometapp.lpk"/>
       </Item4>
     </RequiredPackages>
-    <Units Count="3">
+    <Units Count="5">
       <Unit0>
         <Filename Value="imapserver.lpr"/>
         <IsPartOfProject Value="True"/>
@@ -67,6 +67,15 @@
         <IsPartOfProject Value="True"/>
         <UnitName Value="usimapserver"/>
       </Unit2>
+      <Unit3>
+        <Filename Value="usimapsearch.pas"/>
+        <IsPartOfProject Value="True"/>
+        <UnitName Value="usimapsearch"/>
+      </Unit3>
+      <Unit4>
+        <Filename Value="uSha1.pas"/>
+        <IsPartOfProject Value="True"/>
+      </Unit4>
     </Units>
   </ProjectOptions>
   <CompilerOptions>
