@@ -79,7 +79,6 @@ type
     procedure SetThumbFrameWith(AValue: integer);
     procedure SetThumbLeftOffset(AValue: integer);
     procedure SetThumbTopOffset(AValue: integer);
-    function TColorToBGRInteger(Val: TColor): Integer;
     procedure Init;
     procedure SetArrangeStyle(const AValue: TLayoutStyle);
     procedure SetAutoSort(AValue: boolean);
@@ -364,7 +363,6 @@ end;
 
 procedure TThumbControl.SetOnLoadFile(AValue: TLoadFileEvent);
 begin
-  if FOnLoadFile=AValue then Exit;
   FOnLoadFile:=AValue;
   if Assigned(fMngr) then begin
     if Assigned(FOnLoadFile) then begin
@@ -377,7 +375,6 @@ end;
 
 procedure TThumbControl.SetOnLoadPointer(AValue: TLoadPointerEvent);
 begin
-  if FOnLoadPointer=AValue then Exit;
   FOnLoadPointer:=AValue;
   if Assigned(fMngr) then begin
     if Assigned(FOnLoadPointer) then begin
@@ -393,7 +390,6 @@ begin
   if FSelectStyle <> AValue then begin
     FSelectStyle := AValue;
     if not (csLoading in ComponentState) then begin
-      Arrange;
       Invalidate;
     end;
   end;
@@ -435,13 +431,6 @@ begin
       Invalidate;
     end;
   end;
-end;
-
-function TThumbControl.TColorToBGRInteger(Val: TColor): Integer;
-begin
-  Result:=((Val and $00ff0000) shr 16) or
-          (Val and $0000ff00) or
-          ((Val and $000000ff) shl 16);
 end;
 
 procedure TThumbControl.SetArrangeStyle(const AValue: TLayoutStyle);

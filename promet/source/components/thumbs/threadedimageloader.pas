@@ -242,39 +242,39 @@ const
   A=127;
 var
   i: Integer;
-  PixelPtr,pri: PRGBAQuad;
-  RawImage,ri: TRawImage;
+  pDstImageData,pSrcImageData: PRGBAQuad;
+  DstRawImage,SrcRawImage: TRawImage;
   BytePerPixel: Integer;
   aR,ag,aB: Word;
 
 begin
   // SelectedBitmap erstellen
-  if Assigned(FBitmap) then begin
+  if Assigned(FBitmap) and not Assigned(FBitmapSelected) then begin
     aR:=Red(fSelectColor)*(255-A);
     aG:=Green(fSelectColor)*(255-A);
     aB:=Blue(fSelectColor)*(255-A);
 
-    if not Assigned(FBitmapSelected) then FBitmapSelected := TBitmap.Create;
+    FBitmapSelected:=TBitmap.Create;
     FBitmapSelected.Width:=FBitmap.Width;
     FBitmapSelected.Height:=FBitmap.Height;
     FBitmapSelected.PixelFormat:=FBitmap.PixelFormat;
 
     try
       FBitmapSelected.BeginUpdate(False);
-      ri:=FBitmap.RawImage;
-      RawImage:=FBitmapSelected.RawImage;
-      BytePerPixel:=RawImage.Description.BitsPerPixel div 8;
+      SrcRawImage:=FBitmap.RawImage;
+      DstRawImage:=FBitmapSelected.RawImage;
+      BytePerPixel:=DstRawImage.Description.BitsPerPixel div 8;
       if BytePerPixel=4 then begin;
-        pri:=PRGBAQuad(ri.Data);
-        PixelPtr:=PRGBAQuad(RawImage.Data);
-        for i := 0 to (RawImage.Description.Height*RawImage.Description.Width)-1 do begin
+        pSrcImageData:=PRGBAQuad(SrcRawImage.Data);
+        pDstImageData:=PRGBAQuad(DstRawImage.Data);
+        for i := 0 to (DstRawImage.Description.Height*DstRawImage.Description.Width)-1 do begin
 
-          PixelPtr^.Red:=((pri^.Red*A)+aR) shr 8;
-          PixelPtr^.Green:=((pri^.Green*A)+aG) shr 8;
-          PixelPtr^.Blue:=((pri^.Blue*A)+aB) shr 8;
+          pDstImageData^.Red:=((pSrcImageData^.Red*A)+aR) shr 8;
+          pDstImageData^.Green:=((pSrcImageData^.Green*A)+aG) shr 8;
+          pDstImageData^.Blue:=((pSrcImageData^.Blue*A)+aB) shr 8;
 
-          inc(PixelPtr);
-          inc(pri);
+          inc(pDstImageData);
+          inc(pSrcImageData);
         end;
       end;
     finally
@@ -284,39 +284,6 @@ begin
 end;
 
 
-//procedure TThreadedImage.CreateSelectedBitmap;
-//var
-//  i: Integer;
-//  PixelPtr,pri: PInteger;
-//  RawImage,ri: TRawImage;
-//  BytePerPixel: Integer;
-//begin
-//  // SelectedBitmap erstellen
-//  if Assigned(FBitmap) then begin
-//    if not Assigned(FBitmapSelected) then FBitmapSelected := TBitmap.Create;
-//    FBitmapSelected.Width:=FBitmap.Width;
-//    FBitmapSelected.Height:=FBitmap.Height;
-//    FBitmapSelected.PixelFormat:=FBitmap.PixelFormat;
-//
-//    try
-//      FBitmapSelected.BeginUpdate(False);
-//      ri:=FBitmap.RawImage;
-//      RawImage:=FBitmapSelected.RawImage;
-//      BytePerPixel:=RawImage.Description.BitsPerPixel div 8;
-//      if BytePerPixel=4 then begin;
-//        pri:=Pinteger(ri.Data);
-//        PixelPtr:=PInteger(RawImage.Data);
-//        for i := 0 to (RawImage.Description.Height*RawImage.Description.Width)-1 do begin
-//          PixelPtr^:=(pri^ and fSelectMask);
-//          inc(PixelPtr);
-//          inc(pri);
-//        end;
-//      end;
-//    finally
-//      FBitmapSelected.EndUpdate(False);
-//    end;
-// end;
-//end;
 
 function TThreadedImage.GetRect: TRect;
 begin
@@ -377,7 +344,6 @@ destructor TThreadedImage.Destroy;
 begin
   FBitmap.Free;
   FBitmapSelected.Free;
-  //if Assigned(Pointer) then TObject(Pointer).Free;
   inherited Destroy;
 end;
 
@@ -526,19 +492,18 @@ var i: integer;
 begin
   FQueue.Clear;
 
-  if not FMultiThreaded then
-  begin
-    for i := 0 to fList.Count - 1 do
+  if not FMultiThreaded then begin
+    for i := 0 to fList.Count - 1 do begin
       if IntersectRect(Dum, ARect, TThreadedImage(fList[i]).Rect) then
         if fQueue.IndexOf(TThreadedImage(fList[i])) < 0 then fQueue.Add(TThreadedImage(fList[i]));
-    if Assigned(FBeforeQueue) then
-      BeforeStartQueue(Self);
-    for i := 0 to fList.Count - 1 do
+    end;
+    if Assigned(FBeforeQueue) then BeforeStartQueue(Self);
+    for i := 0 to fList.Count - 1 do begin
       if IntersectRect(Dum, ARect, TThreadedImage(fList[i]).Rect) then
         TThreadedImage(fList[i]).Load(FReload) else if FFreeInvisibleImage then
         TThreadedImage(fList[i]).FreeImage;
-  end else
-  begin
+    end;
+  end else begin
     for i := 0 to fList.Count - 1 do
     begin
       if IntersectRect(Dum, ARect, TThreadedImage(fList[i]).Rect) then
