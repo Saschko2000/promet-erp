@@ -12,7 +12,7 @@ interface
 uses
   Classes, SysUtils, scrollingcontrol, ThreadedImageLoader, types,
   Graphics, fpImage, FPReadJPEGthumb, fpthumbresize,LResources,
-  FileUtil, Dialogs, GraphType, LCLIntf, Controls,LMessages;
+  FileUtil, Dialogs, GraphType, LCLIntf, Controls;
 
 
 type
@@ -58,6 +58,7 @@ type
     fUserThumbWidth: integer;
     fUserThumbHeight: integer;
     fBackground: TBitmap;
+    fTempSelBitmap: TBitmap;
     fThumbDistance: integer; //Distance between thumbnails
     fThumbLeftOffset: integer; //first frame left offset
     fThumbTopOffset: integer;
@@ -95,6 +96,7 @@ type
     procedure SetURLList(const AValue: UTF8String);
     procedure DoClick(Button: TMouseButton; Shift:TShiftState; X,Y:Integer);
     procedure ItemIndexChanged(Sender: TObject);
+    procedure CreateSelectedBitmap(SrcBitmap,DstBitmap: TBitmap);
   protected
     class function GetControlClassDefaultSize: TSize; override;
     procedure BoundsChanged; override;
@@ -234,8 +236,7 @@ procedure Register;
 
 implementation
 
-uses LCLType, Forms, fontfinder,
-fpreadgif,FPReadPSD,FPReadPCX,FPReadTGA; //just register them
+uses LCLType, Forms, fpreadgif,FPReadPSD,FPReadPCX,FPReadTGA; //just register them
 
 
 function ShortenString(AValue: string; Width: integer; ACanvas: TCanvas): string;
@@ -546,6 +547,49 @@ begin
   if Assigned(fOnItemIndexChanged) then OnItemIndexChanged(Self, fMngr.ActiveItem);
 end;
 
+procedure TThumbControl.CreateSelectedBitmap(SrcBitmap,DstBitmap: TBitmap);
+const
+  A=127;
+var
+  i: Integer;
+  pDstImageData,pSrcImageData: PRGBAQuad;
+  DstRawImage,SrcRawImage: TRawImage;
+  BytePerPixel: Integer;
+  aR,ag,aB: Word;
+begin
+  // SelectedBitmap erstellen
+  if Assigned(SrcBitmap) then begin
+    aR:=Red(FColorSelect)*(255-A);
+    aG:=Green(FColorSelect)*(255-A);
+    aB:=Blue(FColorSelect)*(255-A);
+
+    DstBitmap.SetSize(SrcBitmap.Width,SrcBitmap.Height);
+    DstBitmap.PixelFormat:=SrcBitmap.PixelFormat;
+
+    try
+      DstBitmap.BeginUpdate(False);
+      SrcRawImage:=SrcBitmap.RawImage;
+      DstRawImage:=DstBitmap.RawImage;
+      BytePerPixel:=DstRawImage.Description.BitsPerPixel div 8;
+      if BytePerPixel=4 then begin;
+        pSrcImageData:=PRGBAQuad(SrcRawImage.Data);
+        pDstImageData:=PRGBAQuad(DstRawImage.Data);
+        for i := 0 to (DstRawImage.Description.Height*DstRawImage.Description.Width)-1 do begin
+
+          pDstImageData^.Red:=((pSrcImageData^.Red*A)+aR) shr 8;
+          pDstImageData^.Green:=((pSrcImageData^.Green*A)+aG) shr 8;
+          pDstImageData^.Blue:=((pSrcImageData^.Blue*A)+aB) shr 8;
+
+          inc(pDstImageData);
+          inc(pSrcImageData);
+        end;
+      end;
+    finally
+      DstBitmap.EndUpdate(False);
+    end;
+  end;
+end;
+
 procedure TThumbControl.AsyncFocus(Data: PtrInt);
 begin
   SetFocus;
@@ -742,9 +786,10 @@ begin
             ssAlpha:
             begin
               if (Cim.Selected) then begin
+                CreateSelectedBitmap(Cim.Bitmap,fTempSelBitmap);
                 Canvas.Draw(Cim.Left + Cim.Area.Left - HScrollPosition,
                   Cim.Top + Cim.Area.Top - VScrollPosition,
-                  Cim.BitmapSelected);
+                  fTempSelBitmap);
               end else begin
                 Canvas.Draw(Cim.Left + Cim.Area.Left - HScrollPosition,
                   Cim.Top + Cim.Area.Top - VScrollPosition,
@@ -986,22 +1031,22 @@ begin
   fColorFontSelected:=clwhite;
   FCaptionHeight:=8;
 
-  fWindowCreated := false;
-  DoubleBuffered := true;
+  fWindowCreated := False;
+  DoubleBuffered := False;
   fThumbWidth := 80;
   fThumbHeight := 80;
   fResizeFactor:=0;
   fUserThumbWidth := fThumbWidth;
   fUserThumbHeight := fThumbHeight;
-  FSelectStyle:=ssAlpha;
+  FSelectStyle:=ssFrame;
 
   fContentWidth := GetControlClassDefaultSize.cx;
   fContentHeight := GetControlClassDefaultSize.cy;
 
-  fThumbDistance := 5;
+  fThumbDistance := 0;
   fThumbLeftOffset := fThumbDistance;
   fThumbTopOffset := fThumbDistance;
-  FThumbFrameWith := 5;
+  FThumbFrameWith := 6;
 
   FShowCaptions := true;
 
@@ -1019,6 +1064,7 @@ begin
   LargeStep := fThumbWidth * 4;
 
   fBackground := TBitmap.Create;
+  fTempSelBitmap:=TBitmap.Create;
   fDirectory := GetUserDir;
 end;
 
@@ -1028,6 +1074,7 @@ begin
   FURLList.Free;
   fMngr.Free;
   fBackground.Free;
+  fTempSelBitmap.Free;
   inherited Destroy;
 end;
 

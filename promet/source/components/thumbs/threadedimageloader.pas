@@ -32,7 +32,6 @@ type
     FOnThreadStart: TNotifyEvent;
     FArea: TRect;
     FBitmap: TBitmap;
-    FBitmapSelected: TBitmap;
     FHeight: integer;
     FImage: TFPMemoryImage;
     FOnNeedRepaint: TNotifyEvent;
@@ -56,7 +55,6 @@ type
     procedure ThreadTerm(Sender: TObject);
     procedure Select;
     procedure Deselect;
-    procedure CreateSelectedBitmap;
     property OnThreadDone: TNotifyEvent read FOnThreadDone write FOnThreadDone;
     property OnThreadStart: TNotifyEvent read FOnThreadStart write FOnThreadStart;
     property OnSelect: TNotifyEvent read fOnSelect write fOnSelect;
@@ -71,7 +69,6 @@ type
     procedure ChangeSelected;
     property Image: TFPMemoryImage read GetImage;
     property Bitmap: TBitmap read FBitmap write FBitmap;
-    property BitmapSelected: TBitmap read FBitmapSelected write FBitmapSelected;
     property LoadState: TLoadState read FLoadState write FLoadState;
     property URL: UTF8String read FURL write FURL;
     property Name : string read GetName write FName;
@@ -200,7 +197,6 @@ begin
             fBitmap.Transparent:=false;
             FLoadState := lsError;
             FreeAndNil(fImage);
-            if FSelected then CreateSelectedBitmap;
           except
             if fMultiThreaded then if Assigned(fOnThreadDone) then OnThreadDone(Self);
           end;
@@ -219,7 +215,6 @@ end;
 procedure TThreadedImage.Select;
 begin
   if not Selected then begin;
-    CreateSelectedBitmap;
     FSelected:=True;
     // in SelectedList eintragen (auf Reihenfolge achten)
     if Assigned(OnSelect) then OnSelect(Self);
@@ -230,59 +225,10 @@ procedure TThreadedImage.Deselect;
 begin
   if FSelected then begin
     FSelected:=False;
-    // SelectedBitmap Löschen
-    FreeAndNil(FBitmapSelected);
     // aus SelectedList austragen
     if Assigned(OnDeselect) then OnDeselect(Self);
   end;
 end;
-
-procedure TThreadedImage.CreateSelectedBitmap;
-const
-  A=127;
-var
-  i: Integer;
-  pDstImageData,pSrcImageData: PRGBAQuad;
-  DstRawImage,SrcRawImage: TRawImage;
-  BytePerPixel: Integer;
-  aR,ag,aB: Word;
-
-begin
-  // SelectedBitmap erstellen
-  if Assigned(FBitmap) and not Assigned(FBitmapSelected) then begin
-    aR:=Red(fSelectColor)*(255-A);
-    aG:=Green(fSelectColor)*(255-A);
-    aB:=Blue(fSelectColor)*(255-A);
-
-    FBitmapSelected:=TBitmap.Create;
-    FBitmapSelected.Width:=FBitmap.Width;
-    FBitmapSelected.Height:=FBitmap.Height;
-    FBitmapSelected.PixelFormat:=FBitmap.PixelFormat;
-
-    try
-      FBitmapSelected.BeginUpdate(False);
-      SrcRawImage:=FBitmap.RawImage;
-      DstRawImage:=FBitmapSelected.RawImage;
-      BytePerPixel:=DstRawImage.Description.BitsPerPixel div 8;
-      if BytePerPixel=4 then begin;
-        pSrcImageData:=PRGBAQuad(SrcRawImage.Data);
-        pDstImageData:=PRGBAQuad(DstRawImage.Data);
-        for i := 0 to (DstRawImage.Description.Height*DstRawImage.Description.Width)-1 do begin
-
-          pDstImageData^.Red:=((pSrcImageData^.Red*A)+aR) shr 8;
-          pDstImageData^.Green:=((pSrcImageData^.Green*A)+aG) shr 8;
-          pDstImageData^.Blue:=((pSrcImageData^.Blue*A)+aB) shr 8;
-
-          inc(pDstImageData);
-          inc(pSrcImageData);
-        end;
-      end;
-    finally
-      FBitmapSelected.EndUpdate(False);
-    end;
- end;
-end;
-
 
 
 function TThreadedImage.GetRect: TRect;
@@ -321,7 +267,6 @@ begin
   FLoadState := lsEmpty;
   fMultiThreaded := False;
   FBitmap := nil;
-  FBitmapSelected:=nil;
   Fimage := nil;
   FThread := nil;
   FPointer:=nil;
@@ -343,7 +288,6 @@ end;
 destructor TThreadedImage.Destroy;
 begin
   FBitmap.Free;
-  FBitmapSelected.Free;
   inherited Destroy;
 end;
 
@@ -382,7 +326,6 @@ procedure TThreadedImage.FreeImage;
 begin
   fLoadState := lsEmpty;
   FreeAndNil(FBitmap);
-  FreeAndNil(FBitmapSelected);
   FreeAndNil(FImage);
 end;
 
