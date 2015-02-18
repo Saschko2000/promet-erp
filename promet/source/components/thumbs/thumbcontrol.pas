@@ -68,6 +68,7 @@ type
     fColorFont: TColor;
     fColorFontSelected: TColor;
     fGridThumbsPerLine: integer;
+    fGridThumbsPerRow: integer;
     function GetDraggedItem: TThreadedImage;
     function GetFreeInvisibleImages: boolean;
     function GetList: TList;
@@ -598,82 +599,59 @@ end;
 procedure TThumbControl.KeyDown(var Key: Word; Shift: TShiftState);
 begin
   inherited KeyDown(Key, Shift);
-  if Shift=[] then begin
-    case key of
-      VK_LEFT: begin fMngr.ActiveIndex := fMngr.ActiveIndex - 1; ScrollIntoView; end;
-      VK_RIGHT: begin fMngr.ActiveIndex := fMngr.ActiveIndex + 1; ScrollIntoView; end;
-
-      VK_UP: if FIls = IlsGrid then
-        begin
-          fMngr.ActiveIndex := fMngr.ActiveIndex - fGridThumbsPerLine; ScrollIntoView;
-        end else
-        begin fMngr.ActiveIndex := fMngr.ActiveIndex - 1;
-          ScrollIntoView;
-        end;
-
-      VK_DOWN: if FIls = IlsGrid then
-        begin
-          fMngr.ActiveIndex := fMngr.ActiveIndex + fGridThumbsPerLine; ScrollIntoView;
-        end else
-        begin fMngr.ActiveIndex := fMngr.ActiveIndex + 1;
-          ScrollIntoView;
-        end;
-      VK_RETURN: DoSelectItem;
-      VK_PRIOR: if (FIls = IlsVert) or (FIls = IlsGrid) then
-          VScrollPosition := VScrollPosition - ClientHeight else HScrollPosition := HScrollPosition - ClientWidth;
-      VK_NEXT: if (FIls = IlsVert) or (FIls = IlsGrid) then
-          VScrollPosition := VScrollPosition + ClientHeight else HScrollPosition := HScrollPosition + ClientWidth;
-      VK_SPACE: fMngr.SetActiveIndexAndChangeSelected(fMngr.ActiveIndex);
-    end;
-  end else if Shift=[ssShift] then begin
+  if (Shift=[]) or (Shift=[ssShift]) then begin
     case key of
       VK_SHIFT: fShiftSelectStartIDX := fMngr.ActiveIndex;
       VK_LEFT:
       begin
-        fMngr.ActiveIndex := fMngr.ActiveIndex - 1; ScrollIntoView;
-        if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
+        fMngr.ActiveIndex := fMngr.ActiveIndex - 1;
+        ScrollIntoView;
+        if (Shift=[ssShift]) and (fShiftSelectStartIDX>-1) then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
       end;
       VK_RIGHT:
       begin
-        fMngr.ActiveIndex := fMngr.ActiveIndex + 1; ScrollIntoView;
-        if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
+        fMngr.ActiveIndex := fMngr.ActiveIndex + 1;
+        ScrollIntoView;
+        if (Shift=[ssShift]) and (fShiftSelectStartIDX>-1) then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
       end;
-      VK_UP: if FIls = IlsGrid then
-        begin
+      VK_UP:
+      begin
+        if FIls = IlsGrid then begin
           fMngr.ActiveIndex := fMngr.ActiveIndex - fGridThumbsPerLine; ScrollIntoView;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
-        end else
-        begin
+        end else begin
           fMngr.ActiveIndex := fMngr.ActiveIndex - 1;
           ScrollIntoView;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
         end;
-      VK_DOWN: if FIls = IlsGrid then
-        begin
-          fMngr.ActiveIndex := fMngr.ActiveIndex + fGridThumbsPerLine; ScrollIntoView;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
-        end else
-        begin
+        if (Shift=[ssShift]) and (fShiftSelectStartIDX>-1) then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
+      end;
+      VK_DOWN:
+      begin
+        if FIls = IlsGrid then begin
+          fMngr.ActiveIndex := fMngr.ActiveIndex + fGridThumbsPerLine;
+          ScrollIntoView;
+        end else begin
           fMngr.ActiveIndex := fMngr.ActiveIndex + 1;
           ScrollIntoView;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
         end;
-      VK_PRIOR: if (FIls = IlsVert) or (FIls = IlsGrid) then
-        begin
-          VScrollPosition := VScrollPosition - ClientHeight;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
-        end else begin
-          HScrollPosition := HScrollPosition - ClientWidth;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
-        end;
-      VK_NEXT: if (FIls = IlsVert) or (FIls = IlsGrid) then
-        begin
-          VScrollPosition := VScrollPosition + ClientHeight;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
-        end else begin
-          HScrollPosition := HScrollPosition + ClientWidth;
-          if fShiftSelectStartIDX>-1 then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
-        end;
+        if (Shift=[ssShift]) and (fShiftSelectStartIDX>-1) then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
+      end;
+      VK_PRIOR:
+      begin
+        { TODO : Erst zum ersten der Seite gehen und dann eine Seite vor }
+        fMngr.ActiveIndex := fMngr.ActiveIndex - fGridThumbsPerLine*fGridThumbsPerRow;
+        ScrollIntoView;
+        if (Shift=[ssShift]) and (fShiftSelectStartIDX>-1) then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
+      end;
+      VK_NEXT:
+      begin
+        { TODO : Erst zum letzten der Seite gehen und dann eine Seite weiter }
+        fMngr.ActiveIndex := fMngr.ActiveIndex + fGridThumbsPerLine*fGridThumbsPerRow;
+        ScrollIntoView;
+        if (Shift=[ssShift]) and (fShiftSelectStartIDX>-1) then fMngr.SelectBetween(fShiftSelectStartIDX,fMngr.ActiveIndex);
+      end;
+      VK_RETURN: DoSelectItem;
+      VK_SPACE: fMngr.SetActiveIndexAndChangeSelected(fMngr.ActiveIndex);
+      VK_BACK: fMngr.DeselectAll;
     end;
   end else if Shift=[ssCtrl] then begin
     case Key of
@@ -697,34 +675,55 @@ begin
 end;
 
 procedure TThumbControl.ScrollIntoView;
-var itm: TThreadedImage;
-  Dum, ARect: TRect;
+var
+  itm: TThreadedImage;
+  Dum, ARect, ItemRect: TRect;
 begin
   itm := fMngr.ActiveItem;
-  if itm <> nil then
-  begin
+  if itm <> nil then begin
+
     ARect := ClientRect;
     OffsetRect(ARect, HScrollPosition, VScrollPosition);
 
-    if IntersectRect(Dum, ARect, itm.Rect) then exit;
+    ItemRect:=itm.Rect;
+    InflateRect(ItemRect,FThumbFrameWith,FThumbFrameWith);
+    ItemRect.Bottom:=ItemRect.Bottom+fCaptionHeight;
 
-    HScrollPosition := 0;
-    VScrollPosition := 0;
+    IntersectRect(Dum, ARect, ItemRect);
 
-    if (FIls = IlsHorz) then
-      if Abs(Arect.Left - Itm.Rect.Left) > (Arect.Right - Itm.Rect.Right) then
-        HScrollPosition := itm.Rect.Right - ClientWidth + FThumbFrameWith + fThumbDistance else
-        HScrollPosition := itm.Rect.Left - ClientWidth - FThumbFrameWith - fThumbDistance + ClientWidth;
+    if (FIls = IlsHorz) then begin
+      if (Dum.Left=0) and (Dum.Right=0) then begin
+        if abs(ARect.Left-ItemRect.Left) > (ARect.Right-ItemRect.Right) then begin
+          HScrollPosition := ItemRect.Right - ClientWidth + fThumbDistance;
+        end else begin
+          HScrollPosition := ItemRect.Left - fThumbDistance;
+        end;
+      end else begin
+        if ItemRect.Left<Dum.Left then begin
+          HScrollPosition := ItemRect.Left - fThumbDistance;
+        end else if ItemRect.Right>Dum.Right then begin
+          HScrollPosition := ItemRect.Right - ClientWidth + fThumbDistance;
+        end;
+      end;
+    end else begin //(IlsVert or IlsGrid)
+      if (Dum.Top=0) and (Dum.Bottom=0) then begin
+        if abs(ARect.Top-ItemRect.Top) > (ARect.Bottom-ItemRect.Bottom) then begin
+          VScrollPosition := ItemRect.Bottom - ClientHeight + fThumbDistance;
+        end else begin
+          VScrollPosition := ItemRect.Top - fThumbDistance;
+        end;
+      end else begin
+        if ItemRect.Top<Dum.Top then begin
+          VScrollPosition := ItemRect.Top - fThumbDistance;
+        end else if ItemRect.Bottom>Dum.Bottom then begin
+          VScrollPosition := ItemRect.Bottom - ClientHeight + fThumbDistance;
+        end;
+      end;
+    end;
 
-    if (FIls = IlsVert) or (FIls = IlsGrid) then
-      if Abs(Arect.Top - Itm.Rect.Top) > (Arect.Bottom - Itm.Rect.Bottom) then
-        VScrollPosition := itm.Rect.Bottom - ClientHeight + FThumbFrameWith + fThumbDistance else
-        VScrollPosition := itm.Rect.Top - ClientHeight - FThumbFrameWith - fThumbDistance + ClientHeight;
     UpdateDims;
   end;
 end;
-
-
 
 procedure TThumbControl.BoundsChanged;
 begin
@@ -948,6 +947,10 @@ begin
 
   if FIls = IlsHorz then
   begin
+    fGridThumbsPerLine:=(ClientWidth-fThumbLeftOffset) div (fThumbWidth + fThumbDistance + FThumbFrameWith * 2);
+    if fGridThumbsPerLine<1 then fGridThumbsPerLine:=1;
+    fGridThumbsPerRow:=1;
+
     for i := 0 to fMngr.List.Count - 1 do
     begin
       TThreadedImage(fMngr.List[i]).Width := fThumbWidth;
@@ -962,6 +965,10 @@ begin
 
   if FIls = IlsVert then
   begin
+    fGridThumbsPerLine:=1;
+    fGridThumbsPerRow:=(ClientHeight-fThumbTopOffset)  div (fThumbHeight + fThumbDistance + FThumbFrameWith * 2 + FCaptionHeight);
+    if fGridThumbsPerRow<1 then fGridThumbsPerRow:=1;
+
     for i := 0 to fMngr.List.Count - 1 do
     begin
       TThreadedImage(fMngr.List[i]).Width := fThumbWidth;
@@ -977,13 +984,16 @@ begin
 
   if FIls = IlsGrid then
   begin
+    fGridThumbsPerLine:=(ClientWidth-fThumbLeftOffset) div (fThumbWidth + fThumbDistance + FThumbFrameWith * 2);
+    fGridThumbsPerRow:=(ClientHeight-fThumbTopOffset) div (fThumbHeight + fThumbDistance + FThumbFrameWith * 2 + FCaptionHeight);
+    if fGridThumbsPerLine<1 then fGridThumbsPerLine:=1;
+    if fGridThumbsPerRow<1 then fGridThumbsPerRow:=1;
+
     SmallStep := fThumbHeight+fThumbDistance+fCaptionHeight+FThumbFrameWith*2;
     LargeStep := (ClientHeight div (fThumbHeight+fThumbDistance+fCaptionHeight+FThumbFrameWith*2))*
                  (fThumbHeight+fThumbDistance+fCaptionHeight+FThumbFrameWith*2);
     y := 0;
     x := 0;
-    fGridThumbsPerLine := ClientWidth div (fThumbWidth + fThumbDistance + FThumbFrameWith * 2);
-    if fGridThumbsPerLine<1 then fGridThumbsPerLine:=1;
     for i := 0 to fMngr.List.Count - 1 do
     begin
       if (i > 0) then

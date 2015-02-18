@@ -360,9 +360,14 @@ begin
 end;
 
 procedure TImageLoaderManager.SetActiveIndex(const AValue: integer);
+Var
+  i: Integer;
 begin
-  if (AValue > -1) and (AValue < fList.Count) and (AValue<>FActiveIndex) then begin
-    FActiveIndex := AValue;
+  i:=AValue;
+  if (i < 0) then i:=0;
+  if (i > fList.Count-1) then i:=fList.Count-1;
+  if (i<>FActiveIndex) then begin
+    FActiveIndex := i;
     if Assigned(OnItemIndexChanged) then OnItemIndexChanged(Self);
   end;
 end;
