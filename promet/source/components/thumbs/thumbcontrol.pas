@@ -24,6 +24,7 @@ type
   TLoadFileEvent = procedure(Sender: TObject; URL: string; out Stream: TStream) of object;
   TLoadPointerEvent = procedure(Sender: TObject; P: Pointer; out Stream: TStream) of object;
   TDrawItemEvent = procedure(Sender: TObject; Item: TThreadedImage;aRect : TRect) of object;
+  TInitBmpEvent = procedure(Sender: TObject; aWith,aHeight: Integer) of object;
 
 { TThumbControl }
 
@@ -32,8 +33,10 @@ type
     FAfterDraw: TDrawItemEvent;
     FColorSelect: TColor;
     FOnDestroy: TNotifyEvent;
+    FOnInitBackground: TInitBmpEvent;
     fOnItemIndexChanged: TSelectItemEvent;
     FOnDrawCaption: TDrawItemEvent;
+    FOnDrawBackground: TDrawItemEvent;
     FArrangeStyle: TLayoutStyle;
     FCaptionHeight: Integer;
     FIls: TInternalLayoutStyle;
@@ -57,7 +60,6 @@ type
     fDragIDX: Integer;
     fUserThumbWidth: integer;
     fUserThumbHeight: integer;
-    fBackground: TBitmap;
     fTempSelBitmap: TBitmap;
     fThumbDistance: integer; //Distance between thumbnails
     fThumbLeftOffset: integer; //first frame left offset
@@ -166,6 +168,8 @@ type
     property OnScrolled : TNotifyEvent read FOnScrolled write FOnScrolled;
     property AfterDraw : TDrawItemEvent read FAfterDraw write FAfterDraw;
     property OnDrawCaption: TDrawItemEvent read FOnDrawCaption write FOnDrawCaption;
+    property OnInitBackground: TInitBmpEvent read FOnInitBackground write FOnInitBackground;
+    property OnDrawBackground: TDrawItemEvent read FOnDrawBackground write FOnDrawBackground;
     property SelectedList: TList read GetSelectedList;
     property List: TList read GetList;
     property DragedItem: TThreadedImage read GetDraggedItem;
@@ -766,6 +770,12 @@ begin
       Cim := TThreadedImage(fmngr.List[i]);
       BorderRect := Cim.Rect;
       if IntersectRect(Dum, BorderRect, aRect) then begin
+        if Assigned(FOnDrawBackground) then begin
+          BorderRect:= Cim.Rect;
+          InflateRect(BorderRect, FThumbFrameWith, FThumbFrameWith);
+          OffSetRect(BorderRect, -HScrollPosition, -VScrollPosition);
+          OnDrawBackground(Self,Cim,BorderRect);
+        end;
         if Cim.LoadState = lsLoaded then begin
           // Draw Thumb
           case FSelectStyle of
@@ -937,13 +947,8 @@ begin
     end;
   end;
 
-  //if FShowPictureFrame then
-  //begin
-  //  fBackground.SetSize(fThumbWidth + FThumbFrameWith * 2, fThumbHeight + FThumbFrameWith * 2);
-  //  fBackground.Canvas.Brush.FPColor := TColorToFPColor(Color);
-  //  fBackground.Canvas.FillRect(0, 0, fBackground.Width, fBackground.Height);
-  //  fBackground.Canvas.StretchDraw(Rect(0, 0, fBackground.Width, fBackground.Height), frame);
-  //end;
+  if Assigned(FOnInitBackground) then OnInitBackground(Self,fThumbWidth + FThumbFrameWith * 2,
+                                                               fThumbHeight + FThumbFrameWith * 2);
 
   if FIls = IlsHorz then
   begin
@@ -1073,7 +1078,6 @@ begin
   SmallStep := fThumbWidth;
   LargeStep := fThumbWidth * 4;
 
-  fBackground := TBitmap.Create;
   fTempSelBitmap:=TBitmap.Create;
   fDirectory := GetUserDir;
 end;
@@ -1083,7 +1087,6 @@ begin
   if Assigned(FOnDestroy) then FOnDestroy(Self);
   FURLList.Free;
   fMngr.Free;
-  fBackground.Free;
   fTempSelBitmap.Free;
   inherited Destroy;
 end;
