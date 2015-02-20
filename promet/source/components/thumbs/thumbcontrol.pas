@@ -280,6 +280,8 @@ end;
 
 
 procedure TThumbControl.Init;
+Var
+  i: Integer;
 begin
   if not (csDesigning in ComponentState) then
   begin
@@ -290,9 +292,9 @@ begin
   end else
   begin
     fMngr.Clear;
-    fMngr.AddImage('');
-    fMngr.AddImage('');
-    fMngr.AddImage('');
+    for i:=19 downto 0 do begin
+      fMngr.AddImage('');
+    end;
     Arrange;
   end;
 end;
